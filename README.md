@@ -50,12 +50,32 @@ docs/       план развития
    Чтобы открыть приложение в обычном браузере без Telegram, запустите API с `DEV_MODE=true`
    и создайте `frontend/.env` с `VITE_DEV_USER=<ваш telegram id>`. В продакшене `DEV_MODE` должен быть выключен.
 
-## Запуск в Telegram
+## Запуск в Telegram (HTTPS через Cloudflare)
 
-Telegram открывает Mini App только по HTTPS. Самый простой путь:
+Telegram открывает Mini App только по HTTPS. Собранное приложение раздаёт сам бэкенд, поэтому наружу нужно открыть один порт 8000.
 
-1. Выполните `npm run build` в `frontend/`. Собранное приложение раздаёт сам бэкенд, отдельный хостинг для фронта не нужен.
-2. Разверните бэкенд на сервере с HTTPS (для проверки можно пробросить порт 8000 через ngrok или cloudflared).
-3. Укажите этот адрес в `WEBAPP_URL` и перезапустите бота.
+### Быстрый туннель для разработки
 
-Через Docker: заполните `backend/.env` и выполните `docker compose up --build` (PostgreSQL, API и бот).
+Бесплатно и без аккаунта Cloudflare. Адрес вида `https://<случайные-слова>.trycloudflare.com` меняется при каждом запуске.
+
+1. Установите `cloudflared`: `brew install cloudflared` (macOS), `winget install --id Cloudflare.cloudflared` (Windows) или [пакет для Linux](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+2. Заполните `backend/.env` по образцу `backend/.env.example` (`BOT_TOKEN`, `ADMIN_TG_ID`).
+3. Запустите API: `cd backend && uvicorn app.main:app --port 8000`.
+4. В другом терминале из корня проекта: `scripts/dev-tunnel.sh`. Скрипт соберёт Mini App (если ещё не собран), откроет туннель, покажет адрес и сам запишет его в `WEBAPP_URL` в `backend/.env`.
+5. Запустите или перезапустите бота: `cd backend && python -m app.bot`. Откройте бота в Telegram и нажмите `/start`.
+
+На Windows запускайте скрипт через Git Bash или WSL.
+
+### Постоянный адрес на своём домене
+
+Нужен аккаунт Cloudflare и домен, подключённый к Cloudflare.
+
+1. В Cloudflare Zero Trust откройте **Networks → Tunnels → Create a tunnel** (тип Cloudflared) и скопируйте токен.
+2. В настройках туннеля добавьте **Public hostname**, например `learn.example.com`, с сервисом `http://api:8000`.
+3. Скопируйте `.env.example` в `.env` в корне проекта и впишите `CLOUDFLARE_TUNNEL_TOKEN`.
+4. В `backend/.env` укажите `WEBAPP_URL=https://learn.example.com`.
+5. Запустите всё вместе: `docker compose --profile tunnel up --build` (PostgreSQL, API, бот и туннель).
+
+Без туннеля Docker запускается как раньше: `docker compose up --build`.
+
+`DEV_MODE` держите выключенным, когда приложение доступно из интернета.

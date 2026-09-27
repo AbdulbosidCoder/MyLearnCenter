@@ -27,5 +27,18 @@ services:
     depends_on:
       - api
 
+  # Permanent HTTPS address through Cloudflare Tunnel.
+  # Start with: docker compose --profile tunnel up --build
+  # In the Cloudflare dashboard, point the tunnel's public hostname to http://api:8000
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - api
+    profiles:
+      - tunnel
+
 volumes:
   db-data:
