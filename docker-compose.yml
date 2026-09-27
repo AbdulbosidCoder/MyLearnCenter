@@ -7,6 +7,12 @@ services:
       POSTGRES_DB: mlc
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlc -d mlc"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
   api:
     build: .
@@ -16,7 +22,9 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
   bot:
     build: .
@@ -25,7 +33,9 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://mlc:mlc@db:5432/mlc
     depends_on:
-      - api
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
   # Permanent HTTPS address through Cloudflare Tunnel.
   # Start with: docker compose --profile tunnel up --build
@@ -37,6 +47,7 @@ services:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       - api
+    restart: unless-stopped
     profiles:
       - tunnel
 

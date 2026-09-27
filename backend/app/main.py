@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import router
@@ -32,7 +32,19 @@ async def health():
     return {"status": "ok"}
 
 
-if FRONTEND_DIST.is_dir():
+if not FRONTEND_DIST.is_dir():
+
+    @app.get("/", include_in_schema=False)
+    async def frontend_not_built():
+        # Without this the root URL answers {"detail":"Not Found"}, which looks like a broken tunnel.
+        return HTMLResponse(
+            "<h1>MyLearnCenter API работает</h1>"
+            "<p>Mini App ещё не собран. Выполните <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code> "
+            "и перезапустите API.</p>",
+            status_code=503,
+        )
+
+else:
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
