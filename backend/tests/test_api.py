@@ -63,3 +63,16 @@ async def test_admin_role_cannot_be_given_or_self_changed(client):
     assert r.status_code == 400
     r = await client.patch(f"/api/users/{admin['id']}/role", json={"role": "student"}, headers=auth(ADMIN_ID))
     assert r.status_code == 400
+
+
+async def test_viz_blocks_are_checked(client):
+    lesson_id = 1
+    widgets = (await client.get("/api/widgets", headers=auth(ADMIN_ID))).json()
+    assert {"gradient-descent-3d", "kmeans-2d"} <= {w["name"] for w in widgets}
+
+    good = {"type": "viz", "content": '{"widget": "kmeans-2d", "params": {"k": 4}}'}
+    assert (await client.post(f"/api/lessons/{lesson_id}/blocks", json=good, headers=auth(ADMIN_ID))).status_code == 201
+    for content in ["not json", '{"widget": "pie-chart"}', '{"widget": "kmeans-2d", "params": 5}']:
+        bad = {"type": "viz", "content": content}
+        r = await client.post(f"/api/lessons/{lesson_id}/blocks", json=bad, headers=auth(ADMIN_ID))
+        assert r.status_code == 422, content

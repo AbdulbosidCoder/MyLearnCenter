@@ -1,7 +1,8 @@
 import { tg } from "./telegram";
 
 export type Role = "admin" | "teacher" | "student";
-export type BlockType = "text" | "gif" | "image" | "video";
+export type BlockType = "text" | "gif" | "image" | "video" | "viz";
+export type RewriteMode = "simpler" | "example" | "shorter" | "custom";
 
 export interface User {
   id: number;
@@ -16,11 +17,17 @@ export interface Module {
   description: string;
   position: number;
   lesson_count: number;
+  draft_count: number;
 }
+/** done: test passed; locked: an earlier lesson's test is not passed yet. */
+export type LessonState = "done" | "open" | "locked";
 export interface LessonShort {
   id: number;
   title: string;
   position: number;
+  level: number;
+  is_draft: boolean;
+  state: LessonState;
 }
 export interface ModuleDetail extends Module {
   lessons: LessonShort[];
@@ -38,8 +45,60 @@ export interface LessonDetail {
   module_title: string;
   title: string;
   position: number;
+  level: number;
+  is_draft: boolean;
+  question_count: number;
   blocks: Block[];
   prev_lesson_id: number | null;
+  next_lesson_id: number | null;
+  state: LessonState;
+  next_unlocked: boolean;
+}
+
+export interface Material {
+  id: number;
+  title: string;
+  filename: string;
+  kind: "pdf" | "docx" | "text";
+  status: "parsed" | "generating" | "draft_ready" | "failed";
+  char_count: number;
+  chunks_done: number;
+  error: string;
+  module_id: number | null;
+  chunk_count: number;
+}
+export interface MaterialChunk {
+  id: number;
+  position: number;
+  heading: string;
+  text: string;
+  char_count: number;
+}
+export interface MaterialDetail extends Material {
+  chunks: MaterialChunk[];
+}
+
+export interface Question {
+  id: number;
+  position: number;
+  kind: "single" | "multiple";
+  prompt: string;
+  options: string[];
+  // Only teachers and the admin receive the answers before submitting.
+  correct?: number[];
+  explanation?: string;
+}
+export interface Quiz {
+  lesson_id: number;
+  pass_score: number;
+  questions: Question[];
+}
+export interface QuizResult {
+  correct_count: number;
+  total: number;
+  passed: boolean;
+  results: { question_id: number; is_correct: boolean; correct: number[]; explanation: string }[];
+  module_id: number;
   next_lesson_id: number | null;
 }
 
@@ -56,10 +115,12 @@ function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // FormData (file upload) sets its own multipart Content-Type.
+  const isForm = body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: isForm ? authHeaders() : { "Content-Type": "application/json", ...authHeaders() },
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -77,6 +138,7 @@ export const api = {
   module: (id: number) => request<ModuleDetail>("GET", `/modules/${id}`),
   createModule: (data: { title: string; description: string; position: number }) =>
     request<Module>("POST", "/modules", data),
+  publishModule: (id: number) => request<Module>("POST", `/modules/${id}/publish`),
   deleteModule: (id: number) => request<void>("DELETE", `/modules/${id}`),
 
   lesson: (id: number) => request<LessonDetail>("GET", `/lessons/${id}`),
@@ -85,5 +147,26 @@ export const api = {
   deleteLesson: (id: number) => request<void>("DELETE", `/lessons/${id}`),
 
   createBlock: (lessonId: number, data: Omit<Block, "id">) => request<Block>("POST", `/lessons/${lessonId}/blocks`, data),
+  updateBlock: (id: number, data: Partial<Omit<Block, "id">>) => request<Block>("PATCH", `/blocks/${id}`, data),
+  rewriteBlock: (id: number, mode: RewriteMode, instruction = "") =>
+    request<{ text: string }>("POST", `/blocks/${id}/rewrite`, { mode, instruction }),
+  widgets: () => request<{ name: string; title: string; params: Record<string, unknown> }[]>("GET", "/widgets"),
   deleteBlock: (id: number) => request<void>("DELETE", `/blocks/${id}`),
+
+  quiz: (lessonId: number) => request<Quiz>("GET", `/lessons/${lessonId}/quiz`),
+  submitQuiz: (lessonId: number, answers: Record<number, number[]>) =>
+    request<QuizResult>("POST", `/lessons/${lessonId}/quiz`, { answers }),
+  deleteQuestion: (id: number) => request<void>("DELETE", `/questions/${id}`),
+
+  materials: () => request<Material[]>("GET", "/materials"),
+  material: (id: number) => request<MaterialDetail>("GET", `/materials/${id}`),
+  uploadMaterial: (file: File, title: string, moduleId: number | null) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("title", title);
+    if (moduleId !== null) form.append("module_id", String(moduleId));
+    return request<Material>("POST", "/materials", form);
+  },
+  generateLessons: (id: number) => request<Material>("POST", `/materials/${id}/generate`),
+  deleteMaterial: (id: number) => request<void>("DELETE", `/materials/${id}`),
 };

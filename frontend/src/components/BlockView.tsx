@@ -1,6 +1,6 @@
-import Markdown from "react-markdown";
-
 import type { Block } from "../api";
+import { WidgetView } from "../widgets";
+import { Markdown } from "./Markdown";
 
 export function BlockView({ block }: { block: Block }) {
   switch (block.type) {
@@ -15,6 +15,13 @@ export function BlockView({ block }: { block: Block }) {
       return (
         <figure>
           <img src={block.content} alt={block.caption} loading="lazy" />
+          {block.caption && <figcaption>{block.caption}</figcaption>}
+        </figure>
+      );
+    case "viz":
+      return (
+        <figure>
+          <WidgetView content={block.content} />
           {block.caption && <figcaption>{block.caption}</figcaption>}
         </figure>
       );
