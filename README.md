@@ -2,7 +2,7 @@
 
 Telegram Mini App и Telegram-бот для изучения Data Science шаг за шагом: теория, GIF, тесты по каждой теме, 2D/3D-визуализации, уведомления и AI-помощник.
 
-План развития: [docs/architecture.md](docs/architecture.md).
+План развития: [ROADMAP.md](ROADMAP.md), архитектура: [docs/architecture.md](docs/architecture.md).
 
 ## Что уже есть (этап 1)
 
