@@ -1,7 +1,8 @@
 """The AI agent that turns an uploaded file into a theme of short lessons.
 
 1. Each part of the file (see app/materials.py) goes to Claude separately, so a file of any size
-   works: Claude writes 1–3 short lessons for that part, each with a level from 1 to 3.
+   works: Claude writes 1–3 short lessons for that part, each with a level from 1 to 3
+   and a test of 3–5 questions with an explanation for every answer.
 2. One more request sees only the lesson titles and puts them into a theme: name, description,
    order, and which repeated lessons to drop.
 3. The lessons are saved as drafts. Students see them only after a teacher publishes them.
@@ -18,7 +19,8 @@ from sqlalchemy import func, select, update
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import BlockType, Lesson, LessonBlock, Module, SourceChunk, SourceDocument, SourceStatus
+from app.models import BlockType, Lesson, LessonBlock, Module, Question, SourceChunk, SourceDocument, SourceStatus
+from app.schemas import QuestionIn
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +39,17 @@ class LessonDraft(BaseModel):
     title: str
     level: int = Field(ge=1, le=3)
     cards: list[Card] = Field(min_length=1)
+    # Raw questions; each is checked with QuestionIn and broken ones are dropped.
+    questions: list[dict] = []
+
+    def valid_questions(self) -> list[QuestionIn]:
+        valid = []
+        for raw in self.questions:
+            try:
+                valid.append(QuestionIn.model_validate(raw))
+            except ValidationError:
+                continue
+        return valid
 
 
 class PartLessons(BaseModel):
@@ -69,6 +82,18 @@ PART_SCHEMA = _schema(
                     "cards": {
                         "type": "array",
                         "items": _schema({"heading": {"type": "string"}, "text": {"type": "string"}}),
+                    },
+                    "questions": {
+                        "type": "array",
+                        "items": _schema(
+                            {
+                                "kind": {"type": "string", "enum": ["single", "multiple"]},
+                                "prompt": {"type": "string"},
+                                "options": {"type": "array", "items": {"type": "string"}},
+                                "correct": {"type": "array", "items": {"type": "integer"}},
+                                "explanation": {"type": "string"},
+                            }
+                        ),
                     },
                 }
             ),
@@ -104,6 +129,15 @@ Turn this part into 1 to 3 short lessons. Each lesson teaches one idea and takes
 - cards: 2 to 5 cards the student reads one after another. Each card is at most 120 words of \
 Markdown: plain words first, then an example with real numbers or code when it helps. Formulas go \
 in LaTeX between $...$. The last card is a short recap of the main idea.
+- questions: a test of 3 to 5 questions that checks this lesson only, answerable from its cards.
+  - kind "single" has exactly one correct option; "multiple" has two or more, and the student must \
+pick all of them. Mostly use "single".
+  - options: 3 or 4 short options. Wrong options are plausible mistakes a student really makes, \
+not jokes. Do not use "all of the above" or "none of the above".
+  - correct: the 0-based indexes of the correct options.
+  - Prefer questions that make the student apply the idea (compute a small value, predict a \
+result, pick the right method) over recalling a definition word for word.
+  - explanation: 1 or 2 sentences on why the correct answer is right and the common mistake.
 
 If this part has no teachable content (a table of contents, references, a preface), return an \
 empty list of lessons."""
@@ -280,6 +314,10 @@ async def _generate(document_id: int) -> None:
                     blocks=[
                         LessonBlock(type=BlockType.text, content=f"### {card.heading}\n\n{card.text}", position=i)
                         for i, card in enumerate(draft.cards)
+                    ],
+                    questions=[
+                        Question(position=i, **q.model_dump(exclude={"position"}))
+                        for i, q in enumerate(draft.valid_questions())
                     ],
                 )
             )

@@ -85,3 +85,19 @@ summary { cursor: pointer; }
 button:disabled { opacity: 0.5; cursor: default; }
 .agent-card { display: grid; gap: 8px; margin-top: 12px; }
 progress { width: 100%; accent-color: var(--accent); }
+
+.quiz-link { margin-top: 16px; }
+.question { display: grid; gap: 8px; }
+.question .theory p { margin: 0; }
+.options { display: grid; gap: 8px; }
+.option {
+  text-align: left; font-weight: 400; background: var(--bg2); color: var(--text);
+  border: 2px solid transparent; padding: 8px 12px;
+}
+.option p { margin: 0; }
+.option.picked { border-color: var(--accent); }
+.option.right { border-color: #2fa84f; background: rgba(47, 168, 79, 0.12); }
+.option.wrong { border-color: var(--danger); background: rgba(229, 72, 77, 0.12); }
+.ok { color: #2fa84f; }
+.result { display: grid; gap: 4px; margin: 12px 0; border-left: 4px solid var(--danger); }
+.result.passed { border-left-color: #2fa84f; }

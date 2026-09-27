@@ -128,7 +128,11 @@ async def get_lesson(lesson_id: int, session: Session, user: CurrentUser):
     lesson = await session.scalar(
         select(Lesson)
         .where(Lesson.id == lesson_id)
-        .options(selectinload(Lesson.blocks), selectinload(Lesson.module).selectinload(Module.lessons))
+        .options(
+            selectinload(Lesson.blocks),
+            selectinload(Lesson.questions),
+            selectinload(Lesson.module).selectinload(Module.lessons),
+        )
     )
     if lesson is None or (lesson.is_draft and not _is_editor(user)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Lesson not found")
@@ -142,6 +146,7 @@ async def get_lesson(lesson_id: int, session: Session, user: CurrentUser):
         position=lesson.position,
         level=lesson.level,
         is_draft=lesson.is_draft,
+        question_count=len(lesson.questions),
         blocks=[BlockOut.model_validate(b) for b in lesson.blocks],
         prev_lesson_id=siblings[i - 1] if i > 0 else None,
         next_lesson_id=siblings[i + 1] if i + 1 < len(siblings) else None,

@@ -28,6 +28,11 @@ def fake_claude(refuse_second_part: bool = False):
                     "title": f"What is {topic.lower()}",
                     "level": 1 if topic == "Mean" else 2,
                     "cards": [{"heading": topic, "text": "Explained."}, {"heading": "Recap", "text": "Short."}],
+                    "questions": [
+                        {"kind": "single", "prompt": f"{topic}?", "options": ["a", "b", "c"], "correct": [1], "explanation": "b."},
+                        # Broken: index out of range, so the agent drops it.
+                        {"kind": "single", "prompt": "Bad", "options": ["a", "b"], "correct": [5], "explanation": ""},
+                    ],
                 }
             ]
         }
@@ -74,6 +79,10 @@ async def test_agent_builds_a_draft_theme_that_teacher_publishes(client, ai_key,
     ]
     lesson = (await client.get(f"/api/lessons/{module['lessons'][0]['id']}", headers=auth(ADMIN_ID))).json()
     assert [b["content"] for b in lesson["blocks"]] == ["### Variance\n\nExplained.", "### Recap\n\nShort."]
+    assert lesson["question_count"] == 1
+    quiz = (await client.get(f"/api/lessons/{lesson['id']}/quiz", headers=auth(ADMIN_ID))).json()
+    assert quiz["questions"][0]["correct"] == [1] and quiz["questions"][0]["prompt"] == "Variance?"
+    assert (await client.get(f"/api/lessons/{lesson['id']}/quiz", headers=auth(500))).status_code == 404
 
     # Students see nothing until the teacher publishes.
     titles = [m["title"] for m in (await client.get("/api/modules", headers=auth(500))).json()]

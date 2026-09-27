@@ -1,6 +1,5 @@
-import Markdown from "react-markdown";
-
 import type { Block } from "../api";
+import { Markdown } from "./Markdown";
 
 export function BlockView({ block }: { block: Block }) {
   switch (block.type) {

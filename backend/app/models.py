@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, false, func
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -61,6 +61,9 @@ class Lesson(Base):
     module: Mapped[Module] = relationship(back_populates="lessons")
     blocks: Mapped[list["LessonBlock"]] = relationship(
         back_populates="lesson", cascade="all, delete-orphan", order_by="LessonBlock.position"
+    )
+    questions: Mapped[list["Question"]] = relationship(
+        back_populates="lesson", cascade="all, delete-orphan", order_by="Question.position"
     )
 
 
@@ -127,3 +130,44 @@ class SourceChunk(Base):
     char_count: Mapped[int] = mapped_column(Integer)
 
     document: Mapped[SourceDocument] = relationship(back_populates="chunks")
+
+
+class QuestionKind(StrEnum):
+    single = "single"  # exactly one correct option
+    multiple = "multiple"  # one or more correct options, all must be picked
+
+
+# Share of correct answers needed to pass a lesson test.
+PASS_SCORE = 0.7
+
+
+class Question(Base):
+    """One question of a lesson's test."""
+
+    __tablename__ = "questions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[QuestionKind] = mapped_column(String(16), default=QuestionKind.single)
+    prompt: Mapped[str] = mapped_column(Text)
+    options: Mapped[list[str]] = mapped_column(JSON)
+    correct: Mapped[list[int]] = mapped_column(JSON)  # indexes into options
+    # Shown after the answer: why the right option is right.
+    explanation: Mapped[str] = mapped_column(Text, default="")
+
+    lesson: Mapped[Lesson] = relationship(back_populates="questions")
+
+
+class TestAttempt(Base):
+    """A student's finished test; the next lesson unlocks from these once progress is added."""
+
+    __tablename__ = "test_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id", ondelete="CASCADE"), index=True)
+    correct_count: Mapped[int] = mapped_column(Integer)
+    total: Mapped[int] = mapped_column(Integer)
+    passed: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

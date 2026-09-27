@@ -9,6 +9,7 @@ import LessonPage from "./pages/LessonPage";
 import MaterialPage from "./pages/MaterialPage";
 import MaterialsPage from "./pages/MaterialsPage";
 import ModulePage from "./pages/ModulePage";
+import QuizPage from "./pages/QuizPage";
 
 export default function App() {
   const { data: user, error } = useLoad(api.me, []);
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/modules/:id" element={<ModulePage />} />
           <Route path="/lessons/:id" element={<LessonPage />} />
+          <Route path="/lessons/:id/quiz" element={<QuizPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/materials" element={<MaterialsPage />} />
           <Route path="/materials/:id" element={<MaterialPage />} />

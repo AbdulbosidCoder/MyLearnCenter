@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models import BlockType, Role, SourceKind, SourceStatus
+from app.models import BlockType, QuestionKind, Role, SourceKind, SourceStatus
 
 
 class ORM(BaseModel):
@@ -96,6 +96,7 @@ class LessonDetail(ORM):
     position: int
     level: int
     is_draft: bool
+    question_count: int
     blocks: list[BlockOut]
     prev_lesson_id: int | None
     next_lesson_id: int | None
@@ -124,3 +125,61 @@ class ChunkOut(ORM):
 
 class MaterialDetail(MaterialOut):
     chunks: list[ChunkOut]
+
+
+class QuestionIn(BaseModel):
+    kind: QuestionKind = QuestionKind.single
+    prompt: str = Field(min_length=1)
+    options: list[str] = Field(min_length=2, max_length=8)
+    correct: list[int] = Field(min_length=1)
+    explanation: str = ""
+    position: int = 0
+
+    @model_validator(mode="after")
+    def _check_answers(self):
+        if any(not 0 <= i < len(self.options) for i in self.correct) or len(set(self.correct)) != len(self.correct):
+            raise ValueError("correct must list distinct option indexes")
+        if self.kind == QuestionKind.single and len(self.correct) != 1:
+            raise ValueError("a single-choice question has exactly one correct option")
+        return self
+
+
+class QuestionOut(ORM):
+    """What a student sees before answering: no correct options, no explanation."""
+
+    id: int
+    position: int
+    kind: QuestionKind
+    prompt: str
+    options: list[str]
+
+
+class QuestionFull(QuestionOut):
+    correct: list[int]
+    explanation: str
+
+
+class QuizOut(BaseModel):
+    lesson_id: int
+    pass_score: float
+    # Editors get QuestionFull (with answers), students get QuestionOut.
+    questions: list[QuestionFull | QuestionOut]
+
+
+class QuizSubmit(BaseModel):
+    # question id -> picked option indexes
+    answers: dict[int, list[int]]
+
+
+class AnswerResult(BaseModel):
+    question_id: int
+    is_correct: bool
+    correct: list[int]
+    explanation: str
+
+
+class QuizResult(BaseModel):
+    correct_count: int
+    total: int
+    passed: bool
+    results: list[AnswerResult]

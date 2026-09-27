@@ -49,6 +49,13 @@ export default function LessonPage() {
         </section>
       ))}
 
+      {lesson.question_count > 0 && (
+        <Link to={`/lessons/${lesson.id}/quiz`} className="card link-card quiz-link">
+          <strong>✍️ Тест по уроку</strong>
+          <span className="muted small block">Вопросов: {lesson.question_count}. Для прохождения нужно 70% верных ответов.</span>
+        </Link>
+      )}
+
       {canEdit(user) && <NewBlockForm lessonId={id} position={lesson.blocks.length} onCreated={reload} />}
 
       <nav className="pager">

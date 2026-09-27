@@ -43,6 +43,7 @@ export interface LessonDetail {
   position: number;
   level: number;
   is_draft: boolean;
+  question_count: number;
   blocks: Block[];
   prev_lesson_id: number | null;
   next_lesson_id: number | null;
@@ -69,6 +70,28 @@ export interface MaterialChunk {
 }
 export interface MaterialDetail extends Material {
   chunks: MaterialChunk[];
+}
+
+export interface Question {
+  id: number;
+  position: number;
+  kind: "single" | "multiple";
+  prompt: string;
+  options: string[];
+  // Only teachers and the admin receive the answers before submitting.
+  correct?: number[];
+  explanation?: string;
+}
+export interface Quiz {
+  lesson_id: number;
+  pass_score: number;
+  questions: Question[];
+}
+export interface QuizResult {
+  correct_count: number;
+  total: number;
+  passed: boolean;
+  results: { question_id: number; is_correct: boolean; correct: number[]; explanation: string }[];
 }
 
 export class ApiError extends Error {
@@ -117,6 +140,11 @@ export const api = {
 
   createBlock: (lessonId: number, data: Omit<Block, "id">) => request<Block>("POST", `/lessons/${lessonId}/blocks`, data),
   deleteBlock: (id: number) => request<void>("DELETE", `/blocks/${id}`),
+
+  quiz: (lessonId: number) => request<Quiz>("GET", `/lessons/${lessonId}/quiz`),
+  submitQuiz: (lessonId: number, answers: Record<number, number[]>) =>
+    request<QuizResult>("POST", `/lessons/${lessonId}/quiz`, { answers }),
+  deleteQuestion: (id: number) => request<void>("DELETE", `/questions/${id}`),
 
   materials: () => request<Material[]>("GET", "/materials"),
   material: (id: number) => request<MaterialDetail>("GET", `/materials/${id}`),
