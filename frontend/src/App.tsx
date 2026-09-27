@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { api } from "./api";
 import { ErrorBox, Loading } from "./components/Status";
@@ -28,6 +28,7 @@ export default function App() {
           <Route path="/modules/:id" element={<ModulePage />} />
           <Route path="/lessons/:id" element={<LessonPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </UserContext.Provider>
