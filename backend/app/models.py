@@ -71,3 +71,50 @@ class LessonBlock(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     lesson: Mapped[Lesson] = relationship(back_populates="blocks")
+
+
+class SourceKind(StrEnum):
+    pdf = "pdf"
+    docx = "docx"
+    text = "text"  # .txt or .md
+
+
+class SourceStatus(StrEnum):
+    # Stage 1 stops after the text is extracted and split; the AI agent adds the next states.
+    parsed = "parsed"
+
+
+class SourceDocument(Base):
+    """A file a teacher uploaded so the AI agent can turn it into lessons."""
+
+    __tablename__ = "source_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    filename: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[SourceKind] = mapped_column(String(16))
+    status: Mapped[SourceStatus] = mapped_column(String(16), default=SourceStatus.parsed)
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Theme the material is meant for; the agent can also create a new one.
+    module_id: Mapped[int | None] = mapped_column(ForeignKey("modules.id", ondelete="SET NULL"))
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    chunks: Mapped[list["SourceChunk"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="SourceChunk.position"
+    )
+
+
+class SourceChunk(Base):
+    """One short part of an uploaded file, small enough for one AI request."""
+
+    __tablename__ = "source_chunks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    heading: Mapped[str] = mapped_column(String(300), default="")
+    text: Mapped[str] = mapped_column(Text)
+    char_count: Mapped[int] = mapped_column(Integer)
+
+    document: Mapped[SourceDocument] = relationship(back_populates="chunks")

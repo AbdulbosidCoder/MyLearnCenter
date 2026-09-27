@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import BlockType, Role
+from app.models import BlockType, Role, SourceKind, SourceStatus
 
 
 class ORM(BaseModel):
@@ -90,3 +90,26 @@ class LessonDetail(ORM):
     blocks: list[BlockOut]
     prev_lesson_id: int | None
     next_lesson_id: int | None
+
+
+class MaterialOut(ORM):
+    id: int
+    title: str
+    filename: str
+    kind: SourceKind
+    status: SourceStatus
+    char_count: int
+    module_id: int | None
+    chunk_count: int = 0
+
+
+class ChunkOut(ORM):
+    id: int
+    position: int
+    heading: str
+    text: str
+    char_count: int
+
+
+class MaterialDetail(MaterialOut):
+    chunks: list[ChunkOut]

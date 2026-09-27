@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Local development only: lets the API accept an "X-Dev-User" header instead of initData.
     dev_mode: bool = False
     seed_demo_content: bool = True
+    # Largest file a teacher can upload for the AI agent, in megabytes.
+    max_upload_mb: int = 50
+    # Claude API for the AI agent that turns uploaded files into lessons (used from the next stage).
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-sonnet-5"
 
 
 @lru_cache

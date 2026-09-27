@@ -27,6 +27,11 @@ export default function HomePage() {
           👥 Пользователи и роли
         </Link>
       )}
+      {canEdit(user) && (
+        <Link to="/materials" className="card link-card">
+          🤖 Материалы для ИИ: загрузить PDF, Word или текст
+        </Link>
+      )}
 
       <h2>Темы</h2>
       {error && <ErrorBox message={error} />}

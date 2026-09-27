@@ -6,6 +6,8 @@ import { UserContext, useLoad } from "./hooks";
 import AdminPage from "./pages/AdminPage";
 import HomePage from "./pages/HomePage";
 import LessonPage from "./pages/LessonPage";
+import MaterialPage from "./pages/MaterialPage";
+import MaterialsPage from "./pages/MaterialsPage";
 import ModulePage from "./pages/ModulePage";
 
 export default function App() {
@@ -28,6 +30,8 @@ export default function App() {
           <Route path="/modules/:id" element={<ModulePage />} />
           <Route path="/lessons/:id" element={<LessonPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/materials" element={<MaterialsPage />} />
+          <Route path="/materials/:id" element={<MaterialPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

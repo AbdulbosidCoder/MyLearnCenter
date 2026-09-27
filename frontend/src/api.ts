@@ -43,6 +43,27 @@ export interface LessonDetail {
   next_lesson_id: number | null;
 }
 
+export interface Material {
+  id: number;
+  title: string;
+  filename: string;
+  kind: "pdf" | "docx" | "text";
+  status: "parsed";
+  char_count: number;
+  module_id: number | null;
+  chunk_count: number;
+}
+export interface MaterialChunk {
+  id: number;
+  position: number;
+  heading: string;
+  text: string;
+  char_count: number;
+}
+export interface MaterialDetail extends Material {
+  chunks: MaterialChunk[];
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -56,10 +77,12 @@ function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // FormData (file upload) sets its own multipart Content-Type.
+  const isForm = body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: isForm ? authHeaders() : { "Content-Type": "application/json", ...authHeaders() },
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -86,4 +109,15 @@ export const api = {
 
   createBlock: (lessonId: number, data: Omit<Block, "id">) => request<Block>("POST", `/lessons/${lessonId}/blocks`, data),
   deleteBlock: (id: number) => request<void>("DELETE", `/blocks/${id}`),
+
+  materials: () => request<Material[]>("GET", "/materials"),
+  material: (id: number) => request<MaterialDetail>("GET", `/materials/${id}`),
+  uploadMaterial: (file: File, title: string, moduleId: number | null) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("title", title);
+    if (moduleId !== null) form.append("module_id", String(moduleId));
+    return request<Material>("POST", "/materials", form);
+  },
+  deleteMaterial: (id: number) => request<void>("DELETE", `/materials/${id}`),
 };
