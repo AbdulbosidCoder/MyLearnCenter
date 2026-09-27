@@ -19,12 +19,15 @@ export interface Module {
   lesson_count: number;
   draft_count: number;
 }
+/** done: test passed; locked: an earlier lesson's test is not passed yet. */
+export type LessonState = "done" | "open" | "locked";
 export interface LessonShort {
   id: number;
   title: string;
   position: number;
   level: number;
   is_draft: boolean;
+  state: LessonState;
 }
 export interface ModuleDetail extends Module {
   lessons: LessonShort[];
@@ -48,6 +51,8 @@ export interface LessonDetail {
   blocks: Block[];
   prev_lesson_id: number | null;
   next_lesson_id: number | null;
+  state: LessonState;
+  next_unlocked: boolean;
 }
 
 export interface Material {
@@ -93,6 +98,8 @@ export interface QuizResult {
   total: number;
   passed: boolean;
   results: { question_id: number; is_correct: boolean; correct: number[]; explanation: string }[];
+  module_id: number;
+  next_lesson_id: number | null;
 }
 
 export class ApiError extends Error {

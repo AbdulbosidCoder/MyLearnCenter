@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api } from "../api";
+import { api, type LessonShort } from "../api";
 import { BackButton } from "../components/BackButton";
 import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
@@ -29,18 +29,8 @@ export default function ModulePage() {
 
           <ol className="list">
             {module.lessons.map((lesson, i) => (
-              <li key={lesson.id} className="card">
-                <Link to={`/lessons/${lesson.id}`} className="row">
-                  <span className="num">{i + 1}</span>
-                  <span className="grow">
-                    {lesson.title}
-                    <span className="muted small block">
-                      {LEVEL_NAMES[lesson.level] ?? `Уровень ${lesson.level}`}
-                      {lesson.is_draft && " · черновик"}
-                    </span>
-                  </span>
-                  <span className="muted">›</span>
-                </Link>
+              <li key={lesson.id} className={`card lesson-${lesson.state}`}>
+                <LessonRow lesson={lesson} index={i} />
                 {canEdit(user) && (
                   <button
                     className="danger small"
@@ -105,5 +95,35 @@ function NewLessonForm({ moduleId, position, onCreated }: { moduleId: number; po
       {error && <ErrorBox message={error} />}
       <button type="submit">Добавить урок</button>
     </form>
+  );
+}
+
+function LessonRow({ lesson, index }: { lesson: LessonShort; index: number }) {
+  const body = (
+    <>
+      <span className="num">{lesson.state === "done" ? "✓" : lesson.state === "locked" ? "🔒" : index + 1}</span>
+      <span className="grow">
+        {lesson.title}
+        <span className="muted small block">
+          {LEVEL_NAMES[lesson.level] ?? `Уровень ${lesson.level}`}
+          {lesson.is_draft && " · черновик"}
+          {lesson.state === "done" && " · тест сдан"}
+          {lesson.state === "locked" && " · откроется после теста предыдущего урока"}
+        </span>
+      </span>
+    </>
+  );
+  if (lesson.state === "locked") {
+    return (
+      <div className="row" aria-disabled="true">
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Link to={`/lessons/${lesson.id}`} className="row">
+      {body}
+      <span className="muted">›</span>
+    </Link>
   );
 }

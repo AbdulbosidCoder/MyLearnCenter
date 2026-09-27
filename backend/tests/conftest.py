@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -14,6 +15,7 @@ os.environ["DEV_MODE"] = "false"
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
+from app import notify  # noqa: E402
 from app.db import Base, SessionLocal, engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.seed import seed_demo_content  # noqa: E402
@@ -53,3 +55,26 @@ async def fresh_db():
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+class Outbox(list):
+    """Bot messages the app tried to send, as (telegram_id, text); nothing reaches Telegram."""
+
+    async def flush(self) -> "Outbox":
+        await asyncio.gather(*notify._tasks)
+        return self
+
+    def to(self, telegram_id: int) -> list[str]:
+        return [text for tg, text in self if tg == telegram_id]
+
+
+@pytest.fixture(autouse=True)
+def outbox(monkeypatch):
+    box = Outbox()
+
+    async def record(telegram_id: int, text: str) -> None:
+        box.append((telegram_id, text))
+
+    monkeypatch.setattr(notify, "_send", record)
+    monkeypatch.setattr(notify, "PAUSE", 0)
+    return box

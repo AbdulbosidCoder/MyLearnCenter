@@ -3,6 +3,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import BlockType, QuestionKind, Role, SourceKind, SourceStatus
+from app.progress import LessonState
 from app.widgets import parse_viz
 
 
@@ -63,6 +64,8 @@ class LessonShort(ORM):
     position: int
     level: int
     is_draft: bool
+    # For the current user: done, open or locked (see app/progress.py).
+    state: LessonState = LessonState.open
 
 
 class ModuleDetail(ModuleOut):
@@ -106,9 +109,12 @@ class LessonDetail(ORM):
     level: int
     is_draft: bool
     question_count: int
+    state: LessonState
     blocks: list[BlockOut]
     prev_lesson_id: int | None
     next_lesson_id: int | None
+    # False while this lesson's test is not passed and it blocks the next lesson.
+    next_unlocked: bool
 
 
 class MaterialOut(ORM):
@@ -192,6 +198,9 @@ class QuizResult(BaseModel):
     total: int
     passed: bool
     results: list[AnswerResult]
+    module_id: int
+    # The lesson after this one, when the student may open it now.
+    next_lesson_id: int | None = None
 
 
 class RewriteMode(StrEnum):

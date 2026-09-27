@@ -2,10 +2,11 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
-from app import agent
+from app import agent, notify
 from app.config import get_settings
 from app.deps import EDITOR, CurrentUser, Session
 from app.models import BlockType, Lesson, LessonBlock, Module, Role, User
+from app.progress import LessonState, lesson_states
 from app.schemas import (
     BlockIn,
     BlockOut,
@@ -83,6 +84,7 @@ async def get_module(module_id: int, session: Session, user: CurrentUser):
     if module is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Module not found")
     lessons = [lesson for lesson in module.lessons if _is_editor(user) or not lesson.is_draft]
+    states = await lesson_states(session, user, lessons)
     return ModuleDetail(
         id=module.id,
         title=module.title,
@@ -90,7 +92,9 @@ async def get_module(module_id: int, session: Session, user: CurrentUser):
         position=module.position,
         lesson_count=sum(1 for lesson in lessons if not lesson.is_draft),
         draft_count=sum(1 for lesson in lessons if lesson.is_draft),
-        lessons=[LessonShort.model_validate(lesson) for lesson in lessons],
+        lessons=[
+            LessonShort.model_validate(lesson).model_copy(update={"state": states[lesson.id]}) for lesson in lessons
+        ],
     )
 
 
@@ -114,9 +118,13 @@ async def update_module(module_id: int, body: ModulePatch, session: Session):
 async def publish_module(module_id: int, session: Session):
     """Makes every draft lesson of the theme visible to students."""
     module = await _get_or_404(session, Module, module_id)
+    new = await session.scalar(select(func.count(Lesson.id)).where(Lesson.module_id == module_id, Lesson.is_draft))
     await session.execute(update(Lesson).where(Lesson.module_id == module_id).values(is_draft=False))
     await session.commit()
     total = await session.scalar(select(func.count(Lesson.id)).where(Lesson.module_id == module_id))
+    if new:
+        text = f"📘 Новые уроки в теме «{module.title}»: {new}. Заходите учиться!"
+        notify.send(await notify.telegram_ids(session, Role.student), text)
     return ModuleOut.model_validate(module).model_copy(update={"lesson_count": total})
 
 
@@ -143,8 +151,13 @@ async def get_lesson(lesson_id: int, session: Session, user: CurrentUser):
     )
     if lesson is None or (lesson.is_draft and not _is_editor(user)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Lesson not found")
-    siblings = [sib.id for sib in lesson.module.lessons if _is_editor(user) or not sib.is_draft]
+    visible = [sib for sib in lesson.module.lessons if _is_editor(user) or not sib.is_draft]
+    states = await lesson_states(session, user, visible)
+    if states[lesson.id] == LessonState.locked:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Сначала сдайте тест предыдущего урока")
+    siblings = [sib.id for sib in visible]
     i = siblings.index(lesson.id)
+    next_id = siblings[i + 1] if i + 1 < len(siblings) else None
     return LessonDetail(
         id=lesson.id,
         module_id=lesson.module_id,
@@ -154,9 +167,11 @@ async def get_lesson(lesson_id: int, session: Session, user: CurrentUser):
         level=lesson.level,
         is_draft=lesson.is_draft,
         question_count=len(lesson.questions),
+        state=states[lesson.id],
         blocks=[BlockOut.model_validate(b) for b in lesson.blocks],
         prev_lesson_id=siblings[i - 1] if i > 0 else None,
-        next_lesson_id=siblings[i + 1] if i + 1 < len(siblings) else None,
+        next_lesson_id=next_id,
+        next_unlocked=next_id is None or states[next_id] != LessonState.locked,
     )
 
 

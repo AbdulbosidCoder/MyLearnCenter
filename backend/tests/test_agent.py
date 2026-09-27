@@ -62,12 +62,15 @@ async def run_agent(client, material_id: int) -> dict:
     return (await client.get(f"/api/materials/{material_id}", headers=auth(ADMIN_ID))).json()
 
 
-async def test_agent_builds_a_draft_theme_that_teacher_publishes(client, ai_key, monkeypatch):
+async def test_agent_builds_a_draft_theme_that_teacher_publishes(client, ai_key, monkeypatch, outbox):
     monkeypatch.setattr(agent, "ask_claude", fake_claude())
     material = await upload(client)
     assert material["chunk_count"] == 2
 
     done = await run_agent(client, material["id"])
+    assert (await outbox.flush()).to(ADMIN_ID) == [
+        f"🤖 ИИ подготовил черновик по материалу «{material['title']}»: уроков 2. Проверьте и опубликуйте тему."
+    ]
     assert done["status"] == "draft_ready" and done["chunks_done"] == 2 and done["error"] == ""
     module_id = done["module_id"]
 
@@ -94,6 +97,9 @@ async def test_agent_builds_a_draft_theme_that_teacher_publishes(client, ai_key,
 
     r = await client.post(f"/api/modules/{module_id}/publish", headers=auth(ADMIN_ID))
     assert r.status_code == 200 and r.json()["lesson_count"] == 2
+    await outbox.flush()
+    assert outbox.to(500) == ["📘 Новые уроки в теме «Statistics basics»: 2. Заходите учиться!"]
+    assert outbox.to(ADMIN_ID)[1:] == []  # editors are not told about their own publishing
     student_view = (await client.get(f"/api/modules/{module_id}", headers=auth(500))).json()
     assert len(student_view["lessons"]) == 2
 
@@ -119,7 +125,7 @@ async def test_agent_adds_to_chosen_theme_and_reports_skipped_parts(client, ai_k
     assert teacher["draft_count"] == 1
 
 
-async def test_agent_failure_is_shown(client, ai_key, monkeypatch):
+async def test_agent_failure_is_shown(client, ai_key, monkeypatch, outbox):
     async def broken(prompt, schema):
         raise agent.AgentError("Неверный ключ ANTHROPIC_API_KEY.")
 
@@ -127,6 +133,8 @@ async def test_agent_failure_is_shown(client, ai_key, monkeypatch):
     material = await upload(client)
     done = await run_agent(client, material["id"])
     assert done["status"] == "failed" and "ключ" in done["error"]
+    [message] = (await outbox.flush()).to(ADMIN_ID)
+    assert message.startswith("⚠️ ИИ не смог обработать материал") and "ключ" in message
 
 
 async def test_generate_needs_api_key_and_editor(client):

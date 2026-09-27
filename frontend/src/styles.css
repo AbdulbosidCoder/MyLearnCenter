@@ -149,3 +149,9 @@ progress { width: 100%; accent-color: var(--accent); }
 .ai-custom { display: flex; gap: 6px; width: 100%; }
 .ai-custom button { margin-top: 0; }
 .ai-proposal { display: grid; gap: 6px; margin-top: 8px; padding: 10px; border-radius: 10px; border: 2px dashed var(--accent); }
+
+/* Lesson order: locked lessons open after the previous test is passed. */
+.lesson-locked { opacity: 0.6; }
+.lesson-locked .num { background: var(--bg); color: var(--hint); }
+.lesson-done .num { background: #2fa84f; color: #fff; }
+.result .button { margin-top: 8px; justify-self: start; }

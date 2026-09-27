@@ -61,6 +61,16 @@ export default function QuizPage() {
             Верно {result.correct_count} из {result.total}. Нужно не меньше {Math.ceil(quiz.pass_score * result.total)}.
           </span>
           {!result.passed && <span className="muted small block">Посмотрите объяснения ниже и попробуйте ещё раз.</span>}
+          {result.passed && result.next_lesson_id !== null && (
+            <Link className="button" to={`/lessons/${result.next_lesson_id}`}>
+              Следующий урок открыт →
+            </Link>
+          )}
+          {result.passed && result.next_lesson_id === null && (
+            <Link className="button" to={`/modules/${result.module_id}`}>
+              К теме
+            </Link>
+          )}
         </div>
       )}
 

@@ -18,9 +18,20 @@ import anthropic
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, update
 
+from app import notify
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import BlockType, Lesson, LessonBlock, Module, Question, SourceChunk, SourceDocument, SourceStatus
+from app.models import (
+    BlockType,
+    Lesson,
+    LessonBlock,
+    Module,
+    Question,
+    SourceChunk,
+    SourceDocument,
+    SourceStatus,
+    User,
+)
 from app.schemas import QuestionIn
 from app.widgets import WIDGETS, viz_content
 
@@ -318,6 +329,23 @@ async def generate_course(document_id: int) -> None:
     except Exception:
         log.exception("AI agent failed on material %s", document_id)
         await _set(document_id, status=SourceStatus.failed, error="Внутренняя ошибка агента. Подробности в логах сервера.")
+    await _tell_uploader(document_id)
+
+
+async def _tell_uploader(document_id: int) -> None:
+    async with SessionLocal() as session:
+        doc = await session.get(SourceDocument, document_id)
+        uploader = await session.get(User, doc.uploaded_by) if doc.uploaded_by else None
+        if uploader is None:
+            return
+        if doc.status == SourceStatus.draft_ready:
+            lessons = await session.scalar(
+                select(func.count(Lesson.id)).where(Lesson.module_id == doc.module_id, Lesson.is_draft)
+            )
+            text = f"🤖 ИИ подготовил черновик по материалу «{doc.title}»: уроков {lessons}. Проверьте и опубликуйте тему."
+        else:
+            text = f"⚠️ ИИ не смог обработать материал «{doc.title}»: {doc.error}"
+        notify.send([uploader.telegram_id], text)
 
 
 async def _generate(document_id: int) -> None:

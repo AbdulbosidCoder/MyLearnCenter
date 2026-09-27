@@ -53,7 +53,7 @@ export default function LessonPage() {
 
       {lesson.question_count > 0 && (
         <Link to={`/lessons/${lesson.id}/quiz`} className="card link-card quiz-link">
-          <strong>✍️ Тест по уроку</strong>
+          <strong>{lesson.state === "done" ? "✅ Тест сдан" : "✍️ Тест по уроку"}</strong>
           <span className="muted small block">Вопросов: {lesson.question_count}. Для прохождения нужно 70% верных ответов.</span>
         </Link>
       )}
@@ -68,9 +68,13 @@ export default function LessonPage() {
         ) : (
           <span />
         )}
-        {lesson.next_lesson_id ? (
+        {lesson.next_lesson_id && lesson.next_unlocked ? (
           <Link className="button" to={`/lessons/${lesson.next_lesson_id}`}>
             Следующий урок →
+          </Link>
+        ) : lesson.next_lesson_id ? (
+          <Link className="button" to={`/lessons/${lesson.id}/quiz`}>
+            🔒 Сдайте тест, чтобы идти дальше
           </Link>
         ) : (
           <Link className="button" to={`/modules/${lesson.module_id}`}>
