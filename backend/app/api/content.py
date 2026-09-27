@@ -2,8 +2,10 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
+from app import agent
+from app.config import get_settings
 from app.deps import EDITOR, CurrentUser, Session
-from app.models import Lesson, LessonBlock, Module, Role, User
+from app.models import BlockType, Lesson, LessonBlock, Module, Role, User
 from app.schemas import (
     BlockIn,
     BlockOut,
@@ -16,7 +18,12 @@ from app.schemas import (
     ModuleIn,
     ModuleOut,
     ModulePatch,
+    RewriteIn,
+    RewriteMode,
+    RewriteOut,
+    WidgetOut,
 )
+from app.widgets import WIDGETS
 
 router = APIRouter(tags=["content"])
 
@@ -202,3 +209,26 @@ async def delete_block(block_id: int, session: Session):
     await session.delete(await _get_or_404(session, LessonBlock, block_id))
     await session.commit()
     return Response(status_code=204)
+
+
+@router.post("/blocks/{block_id}/rewrite", response_model=RewriteOut, dependencies=[EDITOR])
+async def rewrite_block(block_id: int, body: RewriteIn, session: Session):
+    """Asks the AI for a new version of a theory card. Nothing is saved: the teacher accepts it with PATCH."""
+    if not get_settings().anthropic_api_key:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ИИ не настроен: добавьте ANTHROPIC_API_KEY в backend/.env")
+    block = await _get_or_404(session, LessonBlock, block_id)
+    if block.type != BlockType.text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "ИИ переписывает только текстовые карточки")
+    if body.mode == RewriteMode.custom and not body.instruction.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Напишите, что изменить")
+    lesson = await session.get(Lesson, block.lesson_id)
+    try:
+        text = await agent.rewrite_card(lesson.title, block.content, body.mode, body.instruction)
+    except agent.AgentError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    return RewriteOut(text=text)
+
+
+@router.get("/widgets", response_model=list[WidgetOut], dependencies=[EDITOR])
+async def list_widgets():
+    return [WidgetOut(name=name, title=w["title"], params=w["params"]) for name, w in WIDGETS.items()]

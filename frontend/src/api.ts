@@ -1,7 +1,8 @@
 import { tg } from "./telegram";
 
 export type Role = "admin" | "teacher" | "student";
-export type BlockType = "text" | "gif" | "image" | "video";
+export type BlockType = "text" | "gif" | "image" | "video" | "viz";
+export type RewriteMode = "simpler" | "example" | "shorter" | "custom";
 
 export interface User {
   id: number;
@@ -139,6 +140,10 @@ export const api = {
   deleteLesson: (id: number) => request<void>("DELETE", `/lessons/${id}`),
 
   createBlock: (lessonId: number, data: Omit<Block, "id">) => request<Block>("POST", `/lessons/${lessonId}/blocks`, data),
+  updateBlock: (id: number, data: Partial<Omit<Block, "id">>) => request<Block>("PATCH", `/blocks/${id}`, data),
+  rewriteBlock: (id: number, mode: RewriteMode, instruction = "") =>
+    request<{ text: string }>("POST", `/blocks/${id}/rewrite`, { mode, instruction }),
+  widgets: () => request<{ name: string; title: string; params: Record<string, unknown> }[]>("GET", "/widgets"),
   deleteBlock: (id: number) => request<void>("DELETE", `/blocks/${id}`),
 
   quiz: (lessonId: number) => request<Quiz>("GET", `/lessons/${lessonId}/quiz`),

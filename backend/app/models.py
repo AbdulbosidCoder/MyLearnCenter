@@ -18,6 +18,7 @@ class BlockType(StrEnum):
     gif = "gif"  # URL of a GIF/WebP animation
     image = "image"  # URL of a picture
     video = "video"  # URL of a video
+    viz = "viz"  # interactive 2D/3D visualization, JSON {"widget": ..., "params": ...} (app/widgets.py)
 
 
 class User(Base):

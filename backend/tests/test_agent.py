@@ -28,6 +28,7 @@ def fake_claude(refuse_second_part: bool = False):
                     "title": f"What is {topic.lower()}",
                     "level": 1 if topic == "Mean" else 2,
                     "cards": [{"heading": topic, "text": "Explained."}, {"heading": "Recap", "text": "Short."}],
+                    "visualization": "normal-distribution-2d" if topic == "Variance" else "none",
                     "questions": [
                         {"kind": "single", "prompt": f"{topic}?", "options": ["a", "b", "c"], "correct": [1], "explanation": "b."},
                         # Broken: index out of range, so the agent drops it.
@@ -78,7 +79,9 @@ async def test_agent_builds_a_draft_theme_that_teacher_publishes(client, ai_key,
         ("What is mean", 1, True),
     ]
     lesson = (await client.get(f"/api/lessons/{module['lessons'][0]['id']}", headers=auth(ADMIN_ID))).json()
-    assert [b["content"] for b in lesson["blocks"]] == ["### Variance\n\nExplained.", "### Recap\n\nShort."]
+    assert [b["type"] for b in lesson["blocks"]] == ["text", "viz", "text"]
+    assert lesson["blocks"][1]["content"] == '{"widget": "normal-distribution-2d", "params": {"mean": 0, "sd": 1}}'
+    assert lesson["blocks"][2]["content"] == "### Recap\n\nShort."
     assert lesson["question_count"] == 1
     quiz = (await client.get(f"/api/lessons/{lesson['id']}/quiz", headers=auth(ADMIN_ID))).json()
     assert quiz["questions"][0]["correct"] == [1] and quiz["questions"][0]["prompt"] == "Variance?"
@@ -146,3 +149,31 @@ async def test_old_database_gets_new_columns():
     async with engine.connect() as conn:
         row = (await conn.execute(text("SELECT level, is_draft FROM lessons WHERE id = 1"))).one()
     assert tuple(row) == (1, 0)
+
+
+async def test_teacher_rewrites_a_card_with_ai(client, ai_key, monkeypatch):
+    prompts = []
+
+    async def ask(prompt, schema):
+        prompts.append(prompt)
+        return {"text": "### Mean\n\nSimpler words."}
+
+    monkeypatch.setattr(agent, "ask_claude", ask)
+    lesson = (await client.get("/api/lessons/1", headers=auth(ADMIN_ID))).json()
+    block_id = lesson["blocks"][0]["id"]
+
+    r = await client.post(f"/api/blocks/{block_id}/rewrite", json={"mode": "simpler"}, headers=auth(ADMIN_ID))
+    assert r.status_code == 200 and r.json() == {"text": "### Mean\n\nSimpler words."}
+    assert "simpler" in prompts[0] and lesson["title"] in prompts[0]
+    # Nothing is saved until the teacher accepts.
+    again = (await client.get("/api/lessons/1", headers=auth(ADMIN_ID))).json()
+    assert again["blocks"][0]["content"] == lesson["blocks"][0]["content"]
+
+    r = await client.post(
+        f"/api/blocks/{block_id}/rewrite", json={"mode": "custom", "instruction": "через футбол"}, headers=auth(ADMIN_ID)
+    )
+    assert r.status_code == 200 and "через футбол" in prompts[1]
+    r = await client.post(f"/api/blocks/{block_id}/rewrite", json={"mode": "custom"}, headers=auth(ADMIN_ID))
+    assert r.status_code == 422
+    r = await client.post(f"/api/blocks/{block_id}/rewrite", json={"mode": "simpler"}, headers=auth(500))
+    assert r.status_code == 403

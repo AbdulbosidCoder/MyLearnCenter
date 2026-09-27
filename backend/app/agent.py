@@ -2,7 +2,8 @@
 
 1. Each part of the file (see app/materials.py) goes to Claude separately, so a file of any size
    works: Claude writes 1–3 short lessons for that part, each with a level from 1 to 3
-   and a test of 3–5 questions with an explanation for every answer.
+   and a test of 3–5 questions with an explanation for every answer. When one of the interactive
+   2D/3D visualizations (app/widgets.py) fits the lesson, Claude attaches it.
 2. One more request sees only the lesson titles and puts them into a theme: name, description,
    order, and which repeated lessons to drop.
 3. The lessons are saved as drafts. Students see them only after a teacher publishes them.
@@ -21,6 +22,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import BlockType, Lesson, LessonBlock, Module, Question, SourceChunk, SourceDocument, SourceStatus
 from app.schemas import QuestionIn
+from app.widgets import WIDGETS, viz_content
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,8 @@ class LessonDraft(BaseModel):
     cards: list[Card] = Field(min_length=1)
     # Raw questions; each is checked with QuestionIn and broken ones are dropped.
     questions: list[dict] = []
+    # A widget name from app/widgets.py, or "none".
+    visualization: str = "none"
 
     def valid_questions(self) -> list[QuestionIn]:
         valid = []
@@ -83,6 +87,7 @@ PART_SCHEMA = _schema(
                         "type": "array",
                         "items": _schema({"heading": {"type": "string"}, "text": {"type": "string"}}),
                     },
+                    "visualization": {"type": "string", "enum": ["none", *WIDGETS]},
                     "questions": {
                         "type": "array",
                         "items": _schema(
@@ -138,6 +143,9 @@ not jokes. Do not use "all of the above" or "none of the above".
   - Prefer questions that make the student apply the idea (compute a small value, predict a \
 result, pick the right method) over recalling a definition word for word.
   - explanation: 1 or 2 sentences on why the correct answer is right and the common mistake.
+- visualization: an interactive widget the app can show after the first card, or "none". Pick one \
+only when it really shows this lesson's idea:
+{widgets}
 
 If this part has no teachable content (a table of contents, references, a preface), return an \
 empty list of lessons."""
@@ -204,7 +212,12 @@ async def ask_claude(prompt: str, schema: dict) -> dict | None:
 
 async def lessons_for_part(doc_title: str, chunk: SourceChunk, total: int) -> list[LessonDraft]:
     prompt = PART_PROMPT.format(
-        n=chunk.position + 1, total=total, doc_title=doc_title, heading=chunk.heading, text=chunk.text
+        n=chunk.position + 1,
+        total=total,
+        doc_title=doc_title,
+        heading=chunk.heading,
+        text=chunk.text,
+        widgets="\n".join(f"  - {name}: {w['about']}" for name, w in WIDGETS.items()),
     )
     data = await ask_claude(prompt, PART_SCHEMA)
     if data is None:
@@ -233,6 +246,51 @@ async def plan_theme(doc_title: str, drafts: list[LessonDraft]) -> ThemePlan:
     if not plan.order:
         plan.order = fallback.order
     return plan
+
+
+def _blocks(draft: LessonDraft) -> list[LessonBlock]:
+    blocks = [
+        LessonBlock(type=BlockType.text, content=f"### {card.heading}\n\n{card.text}") for card in draft.cards
+    ]
+    if draft.visualization in WIDGETS:
+        viz = LessonBlock(
+            type=BlockType.viz, content=viz_content(draft.visualization), caption=WIDGETS[draft.visualization]["title"]
+        )
+        blocks.insert(1, viz)
+    for i, block in enumerate(blocks):
+        block.position = i
+    return blocks
+
+
+# --- Rewriting one card on a teacher's request -----------------------------------------
+
+REWRITE_ASKS = {
+    "simpler": "Rewrite it simpler, for a student who meets the idea for the first time: shorter "
+    "sentences, everyday words, one clear analogy. Keep every fact.",
+    "example": "Keep the text and add one concrete worked example with real numbers or a short code "
+    "snippet that shows the idea in action.",
+    "shorter": "Make it about half as long. Keep the main idea and the example, drop the rest.",
+}
+
+REWRITE_PROMPT = """This is one card of the lesson "{lesson_title}" in a learning app:
+
+<card>
+{text}
+</card>
+
+{ask}
+
+Return the whole new card as Markdown in the same language. Formulas go in LaTeX between $...$. \
+Keep a heading line if the card has one."""
+
+
+async def rewrite_card(lesson_title: str, text: str, mode: str, instruction: str) -> str:
+    ask = REWRITE_ASKS.get(mode) or f"Change it as the teacher asks: {instruction}"
+    prompt = REWRITE_PROMPT.format(lesson_title=lesson_title, text=text, ask=ask)
+    data = await ask_claude(prompt, _schema({"text": {"type": "string"}}))
+    if not data or not str(data.get("text", "")).strip():
+        raise AgentError("ИИ не смог переписать эту карточку. Попробуйте другую просьбу.")
+    return data["text"].strip()
 
 
 # --- The job -------------------------------------------------------------------------------
@@ -311,10 +369,7 @@ async def _generate(document_id: int) -> None:
                     position=start + offset,
                     level=draft.level,
                     is_draft=True,
-                    blocks=[
-                        LessonBlock(type=BlockType.text, content=f"### {card.heading}\n\n{card.text}", position=i)
-                        for i, card in enumerate(draft.cards)
-                    ],
+                    blocks=_blocks(draft),
                     questions=[
                         Question(position=i, **q.model_dump(exclude={"position"}))
                         for i, q in enumerate(draft.valid_questions())

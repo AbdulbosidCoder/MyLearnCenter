@@ -1,6 +1,9 @@
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import BlockType, QuestionKind, Role, SourceKind, SourceStatus
+from app.widgets import parse_viz
 
 
 class ORM(BaseModel):
@@ -71,6 +74,12 @@ class BlockIn(BaseModel):
     content: str = ""
     caption: str = Field(default="", max_length=300)
     position: int = 0
+
+    @model_validator(mode="after")
+    def _check_viz(self):
+        if self.type == BlockType.viz:
+            parse_viz(self.content)
+        return self
 
 
 class BlockPatch(BaseModel):
@@ -183,3 +192,26 @@ class QuizResult(BaseModel):
     total: int
     passed: bool
     results: list[AnswerResult]
+
+
+class RewriteMode(StrEnum):
+    simpler = "simpler"
+    example = "example"
+    shorter = "shorter"
+    custom = "custom"
+
+
+class RewriteIn(BaseModel):
+    mode: RewriteMode
+    # The teacher's own request for mode "custom", e.g. "объясни через футбол".
+    instruction: str = Field(default="", max_length=500)
+
+
+class RewriteOut(BaseModel):
+    text: str
+
+
+class WidgetOut(BaseModel):
+    name: str
+    title: str
+    params: dict

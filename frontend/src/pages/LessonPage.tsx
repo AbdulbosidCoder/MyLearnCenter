@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { api, type BlockType } from "../api";
 import { BackButton } from "../components/BackButton";
+import { AiRewrite } from "../components/AiRewrite";
 import { BlockView } from "../components/BlockView";
 import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
@@ -33,6 +34,7 @@ export default function LessonPage() {
       {lesson.blocks.map((block) => (
         <section key={block.id} className="lesson-block">
           <BlockView block={block} />
+          {canEdit(user) && block.type === "text" && <AiRewrite block={block} onSaved={reload} />}
           {canEdit(user) && (
             <button
               className="danger small"
@@ -85,10 +87,12 @@ const BLOCK_LABELS: Record<BlockType, string> = {
   gif: "GIF-анимация (ссылка)",
   image: "Картинка (ссылка)",
   video: "Видео (ссылка)",
+  viz: "Визуализация 2D/3D",
 };
 
 function NewBlockForm({ lessonId, position, onCreated }: { lessonId: number; position: number; onCreated: () => void }) {
   const [type, setType] = useState<BlockType>("text");
+  const { data: widgets } = useLoad(api.widgets, []);
   const [content, setContent] = useState("");
   const [caption, setCaption] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +112,13 @@ function NewBlockForm({ lessonId, position, onCreated }: { lessonId: number; pos
   return (
     <form className="card form" onSubmit={submit}>
       <h3>Добавить блок</h3>
-      <select value={type} onChange={(e) => setType(e.target.value as BlockType)}>
+      <select
+        value={type}
+        onChange={(e) => {
+          setType(e.target.value as BlockType);
+          setContent("");
+        }}
+      >
         {Object.entries(BLOCK_LABELS).map(([value, label]) => (
           <option key={value} value={value}>
             {label}
@@ -123,6 +133,18 @@ function NewBlockForm({ lessonId, position, onCreated }: { lessonId: number; pos
           onChange={(e) => setContent(e.target.value)}
           required
         />
+      ) : type === "viz" ? (
+        <>
+          <select value={content} onChange={(e) => setContent(e.target.value)} required>
+            <option value="">Выберите визуализацию</option>
+            {widgets?.map((w) => (
+              <option key={w.name} value={JSON.stringify({ widget: w.name, params: w.params })}>
+                {w.title}
+              </option>
+            ))}
+          </select>
+          <input placeholder="Подпись (необязательно)" value={caption} onChange={(e) => setCaption(e.target.value)} />
+        </>
       ) : (
         <>
           <input type="url" placeholder="https://…" value={content} onChange={(e) => setContent(e.target.value)} required />
