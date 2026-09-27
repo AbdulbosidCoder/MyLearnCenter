@@ -7,6 +7,7 @@ import { BlockView } from "../components/BlockView";
 import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
 import { confirmAction } from "../telegram";
+import { LEVEL_NAMES } from "./ModulePage";
 
 export default function LessonPage() {
   const id = Number(useParams().id);
@@ -23,6 +24,10 @@ export default function LessonPage() {
         ← {lesson.module_title}
       </Link>
       <h1>{lesson.title}</h1>
+      <p className="muted small">
+        {LEVEL_NAMES[lesson.level] ?? `Уровень ${lesson.level}`}
+        {lesson.is_draft && " · черновик, студенты его пока не видят"}
+      </p>
 
       {lesson.blocks.length === 0 && <p className="muted">В уроке пока нет материалов.</p>}
       {lesson.blocks.map((block) => (

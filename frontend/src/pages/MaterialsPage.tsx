@@ -7,6 +7,12 @@ import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
 
 const KIND_NAMES: Record<Material["kind"], string> = { pdf: "PDF", docx: "Word", text: "Текст" };
+const STATUS_NAMES: Record<Material["status"], string> = {
+  parsed: "",
+  generating: "ИИ пишет уроки…",
+  draft_ready: "черновик готов",
+  failed: "ошибка ИИ",
+};
 
 export function formatChars(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)} тыс. знаков` : `${n} знаков`;
@@ -44,6 +50,7 @@ export default function MaterialsPage() {
                 <strong>{m.title}</strong>
                 <span className="muted small block">
                   {KIND_NAMES[m.kind]} · частей: {m.chunk_count} · {formatChars(m.char_count)}
+                  {STATUS_NAMES[m.status] && ` · ${STATUS_NAMES[m.status]}`}
                 </span>
               </span>
             </Link>

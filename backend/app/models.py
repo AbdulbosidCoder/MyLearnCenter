@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -53,6 +53,10 @@ class Lesson(Base):
     module_id: Mapped[int] = mapped_column(ForeignKey("modules.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # 1 basics, 2 practice, 3 hard.
+    level: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Lessons the AI agent wrote stay hidden from students until a teacher publishes them.
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     module: Mapped[Module] = relationship(back_populates="lessons")
     blocks: Mapped[list["LessonBlock"]] = relationship(
@@ -80,8 +84,10 @@ class SourceKind(StrEnum):
 
 
 class SourceStatus(StrEnum):
-    # Stage 1 stops after the text is extracted and split; the AI agent adds the next states.
-    parsed = "parsed"
+    parsed = "parsed"  # text extracted and split into parts
+    generating = "generating"  # the AI agent is writing lessons
+    draft_ready = "draft_ready"  # draft lessons are waiting for a teacher
+    failed = "failed"
 
 
 class SourceDocument(Base):
@@ -95,7 +101,10 @@ class SourceDocument(Base):
     kind: Mapped[SourceKind] = mapped_column(String(16))
     status: Mapped[SourceStatus] = mapped_column(String(16), default=SourceStatus.parsed)
     char_count: Mapped[int] = mapped_column(Integer, default=0)
-    # Theme the material is meant for; the agent can also create a new one.
+    # Progress of the AI agent and what went wrong, shown to the teacher.
+    chunks_done: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Theme the lessons go to. Empty means the agent creates a new theme and stores it here.
     module_id: Mapped[int | None] = mapped_column(ForeignKey("modules.id", ondelete="SET NULL"))
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

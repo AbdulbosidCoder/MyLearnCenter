@@ -83,3 +83,5 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 summary { cursor: pointer; }
 .chunk-text { white-space: pre-wrap; font-size: 0.9rem; margin: 8px 0 0; }
 button:disabled { opacity: 0.5; cursor: default; }
+.agent-card { display: grid; gap: 8px; margin-top: 12px; }
+progress { width: 100%; accent-color: var(--accent); }

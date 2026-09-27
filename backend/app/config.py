@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     seed_demo_content: bool = True
     # Largest file a teacher can upload for the AI agent, in megabytes.
     max_upload_mb: int = 50
-    # Claude API for the AI agent that turns uploaded files into lessons (used from the next stage).
+    # Claude API for the AI agent that turns uploaded files into lessons.
     anthropic_api_key: str = ""
-    ai_model: str = "claude-sonnet-5"
+    ai_model: str = "claude-opus-5"
 
 
 @lru_cache

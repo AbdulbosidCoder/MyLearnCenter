@@ -7,6 +7,8 @@ import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
 import { confirmAction } from "../telegram";
 
+export const LEVEL_NAMES: Record<number, string> = { 1: "Уровень 1 · основы", 2: "Уровень 2 · практика", 3: "Уровень 3 · сложно" };
+
 export default function ModulePage() {
   const id = Number(useParams().id);
   const user = useUser();
@@ -30,7 +32,13 @@ export default function ModulePage() {
               <li key={lesson.id} className="card">
                 <Link to={`/lessons/${lesson.id}`} className="row">
                   <span className="num">{i + 1}</span>
-                  <span className="grow">{lesson.title}</span>
+                  <span className="grow">
+                    {lesson.title}
+                    <span className="muted small block">
+                      {LEVEL_NAMES[lesson.level] ?? `Уровень ${lesson.level}`}
+                      {lesson.is_draft && " · черновик"}
+                    </span>
+                  </span>
                   <span className="muted">›</span>
                 </Link>
                 {canEdit(user) && (
@@ -50,6 +58,23 @@ export default function ModulePage() {
             ))}
           </ol>
           {module.lessons.length === 0 && <p className="muted">В этой теме пока нет уроков.</p>}
+
+          {canEdit(user) && module.draft_count > 0 && (
+            <div className="card agent-card">
+              <strong>Черновиков: {module.draft_count}</strong>
+              <span className="muted small">Их написал ИИ. Студенты не видят черновики, пока вы не опубликуете тему.</span>
+              <button
+                onClick={async () => {
+                  if (await confirmAction(`Опубликовать ${module.draft_count} черновик(ов) для студентов?`)) {
+                    await api.publishModule(module.id);
+                    reload();
+                  }
+                }}
+              >
+                Опубликовать
+              </button>
+            </div>
+          )}
 
           {canEdit(user) && <NewLessonForm moduleId={id} position={module.lessons.length} onCreated={reload} />}
         </>

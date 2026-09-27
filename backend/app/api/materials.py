@@ -6,10 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
+from app.agent import start_generation
 from app.config import get_settings
 from app.deps import EDITOR, Session
 from app.materials import MaterialError, parse_material
-from app.models import Module, SourceChunk, SourceDocument, User
+from app.models import Module, SourceChunk, SourceDocument, SourceStatus, User
 from app.schemas import ChunkOut, MaterialDetail, MaterialOut
 
 router = APIRouter(tags=["materials"])
@@ -88,6 +89,25 @@ async def get_material(material_id: int, session: Session):
         chunk_count=len(doc.chunks),
         chunks=[ChunkOut.model_validate(c) for c in doc.chunks],
     )
+
+
+@router.post("/materials/{material_id}/generate", response_model=MaterialOut, status_code=202, dependencies=[EDITOR])
+async def generate_lessons(material_id: int, session: Session):
+    """Starts the AI agent in the background; the page polls the material for progress."""
+    if not get_settings().anthropic_api_key:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "ИИ не настроен: добавьте ANTHROPIC_API_KEY в backend/.env"
+        )
+    doc = await session.get(SourceDocument, material_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Material not found")
+    if doc.status == SourceStatus.generating:
+        raise HTTPException(status.HTTP_409_CONFLICT, "ИИ уже работает с этим материалом")
+    chunk_count = await session.scalar(select(func.count(SourceChunk.id)).where(SourceChunk.document_id == doc.id))
+    doc.status, doc.chunks_done, doc.error = SourceStatus.generating, 0, ""
+    await session.commit()
+    start_generation(doc.id)
+    return MaterialOut.model_validate(doc).model_copy(update={"chunk_count": chunk_count})
 
 
 @router.delete("/materials/{material_id}", status_code=204, dependencies=[EDITOR])

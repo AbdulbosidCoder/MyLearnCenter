@@ -16,11 +16,14 @@ export interface Module {
   description: string;
   position: number;
   lesson_count: number;
+  draft_count: number;
 }
 export interface LessonShort {
   id: number;
   title: string;
   position: number;
+  level: number;
+  is_draft: boolean;
 }
 export interface ModuleDetail extends Module {
   lessons: LessonShort[];
@@ -38,6 +41,8 @@ export interface LessonDetail {
   module_title: string;
   title: string;
   position: number;
+  level: number;
+  is_draft: boolean;
   blocks: Block[];
   prev_lesson_id: number | null;
   next_lesson_id: number | null;
@@ -48,8 +53,10 @@ export interface Material {
   title: string;
   filename: string;
   kind: "pdf" | "docx" | "text";
-  status: "parsed";
+  status: "parsed" | "generating" | "draft_ready" | "failed";
   char_count: number;
+  chunks_done: number;
+  error: string;
   module_id: number | null;
   chunk_count: number;
 }
@@ -100,6 +107,7 @@ export const api = {
   module: (id: number) => request<ModuleDetail>("GET", `/modules/${id}`),
   createModule: (data: { title: string; description: string; position: number }) =>
     request<Module>("POST", "/modules", data),
+  publishModule: (id: number) => request<Module>("POST", `/modules/${id}/publish`),
   deleteModule: (id: number) => request<void>("DELETE", `/modules/${id}`),
 
   lesson: (id: number) => request<LessonDetail>("GET", `/lessons/${id}`),
@@ -119,5 +127,6 @@ export const api = {
     if (moduleId !== null) form.append("module_id", String(moduleId));
     return request<Material>("POST", "/materials", form);
   },
+  generateLessons: (id: number) => request<Material>("POST", `/materials/${id}/generate`),
   deleteMaterial: (id: number) => request<void>("DELETE", `/materials/${id}`),
 };

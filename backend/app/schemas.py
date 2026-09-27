@@ -37,22 +37,29 @@ class ModuleOut(ORM):
     description: str
     position: int
     lesson_count: int = 0
+    draft_count: int = 0
 
 
 class LessonIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     position: int = 0
+    level: int = Field(default=1, ge=1, le=3)
+    is_draft: bool = False
 
 
 class LessonPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     position: int | None = None
+    level: int | None = Field(default=None, ge=1, le=3)
+    is_draft: bool | None = None
 
 
 class LessonShort(ORM):
     id: int
     title: str
     position: int
+    level: int
+    is_draft: bool
 
 
 class ModuleDetail(ModuleOut):
@@ -87,6 +94,8 @@ class LessonDetail(ORM):
     module_title: str
     title: str
     position: int
+    level: int
+    is_draft: bool
     blocks: list[BlockOut]
     prev_lesson_id: int | None
     next_lesson_id: int | None
@@ -99,6 +108,8 @@ class MaterialOut(ORM):
     kind: SourceKind
     status: SourceStatus
     char_count: int
+    chunks_done: int
+    error: str
     module_id: int | None
     chunk_count: int = 0
 

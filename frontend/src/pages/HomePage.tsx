@@ -46,7 +46,10 @@ export default function HomePage() {
                 <strong>{m.title}</strong>
                 {m.description && <span className="muted small block">{m.description}</span>}
               </span>
-              <span className="muted small">{m.lesson_count} ур.</span>
+              <span className="muted small">
+                {m.lesson_count} ур.
+                {m.draft_count > 0 && <span className="block">+{m.draft_count} черн.</span>}
+              </span>
             </Link>
             {canEdit(user) && (
               <button

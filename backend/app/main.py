@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agent import fail_interrupted_jobs
 from app.api import router
 from app.config import get_settings
 from app.db import SessionLocal, init_db
@@ -17,6 +18,7 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
+    await fail_interrupted_jobs()
     if get_settings().seed_demo_content:
         async with SessionLocal() as session:
             await seed_demo_content(session)
