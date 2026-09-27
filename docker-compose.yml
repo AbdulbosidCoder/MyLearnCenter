@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mlc
+      POSTGRES_PASSWORD: mlc
+      POSTGRES_DB: mlc
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    env_file: backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mlc:mlc@db:5432/mlc
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  bot:
+    build: .
+    command: ["python", "-m", "app.bot"]
+    env_file: backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mlc:mlc@db:5432/mlc
+    depends_on:
+      - api
+
+volumes:
+  db-data:
