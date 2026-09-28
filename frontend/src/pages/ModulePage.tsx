@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type LessonShort } from "../api";
 import { BackButton } from "../components/BackButton";
@@ -12,6 +12,7 @@ export const LEVEL_NAMES: Record<number, string> = { 1: "Уровень 1 · о�
 export default function ModulePage() {
   const id = Number(useParams().id);
   const user = useUser();
+  const navigate = useNavigate();
   const { data: module, error, reload } = useLoad(() => api.module(id), [id]);
 
   return (
@@ -67,6 +68,19 @@ export default function ModulePage() {
           )}
 
           {canEdit(user) && <NewLessonForm moduleId={id} position={module.lessons.length} onCreated={reload} />}
+          {canEdit(user) && (
+            <button
+              className="danger small"
+              onClick={async () => {
+                if (await confirmAction(`Удалить тему «${module.title}» со всеми уроками?`)) {
+                  await api.deleteModule(module.id);
+                  navigate("/");
+                }
+              }}
+            >
+              Удалить тему
+            </button>
+          )}
         </>
       )}
     </>

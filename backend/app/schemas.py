@@ -66,6 +66,7 @@ class LessonShort(ORM):
     is_draft: bool
     # For the current user: done, open or locked (see app/progress.py).
     state: LessonState = LessonState.open
+    has_test: bool = False
 
 
 class ModuleDetail(ModuleOut):
@@ -224,3 +225,31 @@ class WidgetOut(BaseModel):
     name: str
     title: str
     params: dict
+
+
+class QuestOut(BaseModel):
+    key: str
+    title: str
+    value: int
+    goal: int
+
+
+class StatsOut(BaseModel):
+    xp_total: int
+    xp_today: int
+    streak: int
+    tests_passed: int
+    quests: list[QuestOut]
+
+
+class RatingRow(BaseModel):
+    place: int
+    name: str
+    xp: int
+    is_me: bool
+
+
+class LeaderboardOut(BaseModel):
+    rows: list[RatingRow]
+    me: RatingRow | None
+    total: int

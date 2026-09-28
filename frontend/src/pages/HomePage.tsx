@@ -1,75 +1,109 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
-import { api } from "../api";
+import { api, type LessonShort, type ModuleDetail } from "../api";
+import { BookIcon, CheckIcon, ChestIcon, ListIcon, LockIcon, PencilIcon, StarIcon } from "../components/Icons";
+import { Mascot } from "../components/Mascot";
 import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
-import { confirmAction } from "../telegram";
 
-const ROLE_NAMES = { admin: "Администратор", teacher: "Преподаватель", student: "Студент" };
+// Each theme gets its own colour, in this order.
+const SECTION_COLORS = ["green", "pink", "blue", "purple", "orange"];
+// Horizontal shift of the nodes, in px: the path winds left and right like a road.
+const WIND = [0, 44, 70, 44, 0, -44, -70, -44];
 
 export default function HomePage() {
   const user = useUser();
-  const { data: modules, error, reload } = useLoad(api.modules, []);
+  const { data: path, error, reload } = useLoad(api.path, []);
+
+  // The lesson to start now: the first open lesson whose test is not passed, across all themes.
+  const current = path?.flatMap((m) => m.lessons).find((l) => l.state === "open");
 
   return (
     <>
-      <header className="hero">
-        <div>
-          <h1>Привет, {user.first_name}!</h1>
-          <p className="muted">Data Science шаг за шагом</p>
+      {error && <ErrorBox message={error} />}
+      {!path && !error && <Loading />}
+      {path?.length === 0 && <p className="muted center">Тем пока нет.</p>}
+      {path?.map((module, i) => (
+        <Section key={module.id} module={module} index={i} currentId={current?.id} />
+      ))}
+      {canEdit(user) && path && <NewModuleForm position={path.length} onCreated={reload} />}
+    </>
+  );
+}
+
+function Section({ module, index, currentId }: { module: ModuleDetail; index: number; currentId?: number }) {
+  const color = SECTION_COLORS[index % SECTION_COLORS.length];
+  const reachable = module.lessons.some((l) => l.state !== "locked");
+  const finished = module.lessons.length > 0 && module.lessons.every((l) => l.state === "done" || !l.has_test);
+  // The character stands beside the path, on the side the road bends away from.
+  const mascotAt = Math.min(2, module.lessons.length - 1);
+
+  return (
+    <section className="section">
+      <header className={`section-banner ${color}`}>
+        <div className="grow">
+          <span className="section-label">Раздел {index + 1}</span>
+          <h2>{module.title}</h2>
+          {module.draft_count > 0 && <span className="small">Черновиков: {module.draft_count}</span>}
         </div>
-        <span className={`badge role-${user.role}`}>{ROLE_NAMES[user.role]}</span>
+        <Link to={`/modules/${module.id}`} className="section-button">
+          <ListIcon size={22} />
+          <span>Уроки</span>
+        </Link>
       </header>
 
-      {user.role === "admin" && (
-        <Link to="/admin" className="card link-card">
-          👥 Пользователи и роли
-        </Link>
-      )}
-      {canEdit(user) && (
-        <Link to="/materials" className="card link-card">
-          🤖 Материалы для ИИ: загрузить PDF, Word или текст
-        </Link>
-      )}
-
-      <h2>Темы</h2>
-      {error && <ErrorBox message={error} />}
-      {!modules && !error && <Loading />}
-      {modules?.length === 0 && <p className="muted">Тем пока нет.</p>}
-      <ol className="list">
-        {modules?.map((m, i) => (
-          <li key={m.id} className="card">
-            <Link to={`/modules/${m.id}`} className="row">
-              <span className="num">{i + 1}</span>
-              <span className="grow">
-                <strong>{m.title}</strong>
-                {m.description && <span className="muted small block">{m.description}</span>}
-              </span>
-              <span className="muted small">
-                {m.lesson_count} ур.
-                {m.draft_count > 0 && <span className="block">+{m.draft_count} черн.</span>}
-              </span>
-            </Link>
-            {canEdit(user) && (
-              <button
-                className="danger small"
-                onClick={async () => {
-                  if (await confirmAction(`Удалить тему «${m.title}» со всеми уроками?`)) {
-                    await api.deleteModule(m.id);
-                    reload();
-                  }
-                }}
-              >
-                Удалить
-              </button>
+      <ol className={`path ${color}`}>
+        {module.lessons.map((lesson, i) => (
+          <li key={lesson.id} style={{ transform: `translateX(${WIND[i % WIND.length]}px)` }}>
+            <Node lesson={lesson} current={lesson.id === currentId} />
+            {i === mascotAt && (
+              <div className={`path-mascot ${WIND[i % WIND.length] > 0 ? "left" : "right"}`}>
+                <Mascot size={120} dim={!reachable} wave={lesson.id === currentId} />
+              </div>
             )}
           </li>
         ))}
+        {module.lessons.length > 0 && (
+          <li style={{ transform: `translateX(${WIND[module.lessons.length % WIND.length]}px)` }}>
+            <span className={`node chest${finished ? " open" : ""}`} title={finished ? "Тема пройдена" : "Сундук в конце темы"}>
+              <ChestIcon size={42} />
+            </span>
+          </li>
+        )}
       </ol>
+    </section>
+  );
+}
 
-      {canEdit(user) && modules && <NewModuleForm position={modules.length} onCreated={reload} />}
+function Node({ lesson, current }: { lesson: LessonShort; current: boolean }) {
+  // Open the home screen at the lesson to do next, like a bookmark.
+  const ref = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (current) ref.current?.scrollIntoView({ block: "center" });
+  }, [current]);
+  const Icon =
+    lesson.state === "done" ? CheckIcon : lesson.state === "locked" ? LockIcon : current ? StarIcon : lesson.has_test ? PencilIcon : BookIcon;
+  const body = (
+    <>
+      {current && <span className="start-bubble">Начать</span>}
+      <span className="node-face">
+        <Icon size={current ? 38 : 32} />
+      </span>
     </>
+  );
+  const className = `node ${lesson.state}${current ? " current" : ""}${lesson.is_draft ? " draft" : ""}`;
+  if (lesson.state === "locked") {
+    return (
+      <span className={className} title={`${lesson.title}: откроется после теста предыдущего урока`}>
+        {body}
+      </span>
+    );
+  }
+  return (
+    <Link ref={ref} to={`/lessons/${lesson.id}`} className={className} title={lesson.title} aria-label={lesson.title}>
+      {body}
+    </Link>
   );
 }
 

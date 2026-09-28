@@ -28,6 +28,7 @@ export interface LessonShort {
   level: number;
   is_draft: boolean;
   state: LessonState;
+  has_test: boolean;
 }
 export interface ModuleDetail extends Module {
   lessons: LessonShort[];
@@ -102,6 +103,31 @@ export interface QuizResult {
   next_lesson_id: number | null;
 }
 
+export interface Quest {
+  key: "xp" | "test" | "perfect";
+  title: string;
+  value: number;
+  goal: number;
+}
+export interface Stats {
+  xp_total: number;
+  xp_today: number;
+  streak: number;
+  tests_passed: number;
+  quests: Quest[];
+}
+export interface RatingRow {
+  place: number;
+  name: string;
+  xp: number;
+  is_me: boolean;
+}
+export interface Leaderboard {
+  rows: RatingRow[];
+  me: RatingRow | null;
+  total: number;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -131,6 +157,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   me: () => request<User>("GET", "/me"),
+  stats: () => request<Stats>("GET", "/me/stats"),
+  leaderboard: () => request<Leaderboard>("GET", "/leaderboard"),
+  path: () => request<ModuleDetail[]>("GET", "/path"),
   users: () => request<User[]>("GET", "/users"),
   setRole: (userId: number, role: Role) => request<User>("PATCH", `/users/${userId}/role`, { role }),
 

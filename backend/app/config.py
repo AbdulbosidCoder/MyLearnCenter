@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # Claude API for the AI agent that turns uploaded files into lessons.
     anthropic_api_key: str = ""
     ai_model: str = "claude-opus-5"
+    # Days for streaks and daily quests start at midnight in this time zone.
+    timezone: str = "Asia/Tashkent"
 
 
 @lru_cache
