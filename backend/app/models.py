@@ -85,6 +85,13 @@ class SourceKind(StrEnum):
     pdf = "pdf"
     docx = "docx"
     text = "text"  # .txt or .md
+    image = "image"  # a single picture: a photo of a board, a scan, a diagram
+
+
+class IndexStatus(StrEnum):
+    pending = "pending"  # pictures are being read
+    ready = "ready"
+    failed = "failed"
 
 
 class SourceStatus(StrEnum):
@@ -112,9 +119,15 @@ class SourceDocument(Base):
     module_id: Mapped[int | None] = mapped_column(ForeignKey("modules.id", ondelete="SET NULL"))
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Reading the pictures (OCR and captions) and filling the knowledge base runs after the upload.
+    index_status: Mapped[IndexStatus] = mapped_column(String(16), default=IndexStatus.pending, server_default="ready")
+    images_done: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     chunks: Mapped[list["SourceChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan", order_by="SourceChunk.position"
+    )
+    images: Mapped[list["SourceImage"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="SourceImage.number"
     )
 
 
@@ -131,6 +144,39 @@ class SourceChunk(Base):
     char_count: Mapped[int] = mapped_column(Integer)
 
     document: Mapped[SourceDocument] = relationship(back_populates="chunks")
+
+
+class SourceImage(Base):
+    """A picture from an uploaded file, with what the local vision models read from it."""
+
+    __tablename__ = "source_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id", ondelete="CASCADE"), index=True)
+    number: Mapped[int] = mapped_column(Integer)  # the N of "[Рисунок N]" in the text
+    path: Mapped[str] = mapped_column(String(300))  # under settings.media_dir
+    caption: Mapped[str] = mapped_column(Text, default="")  # what is shown (Florence-2)
+    ocr_text: Mapped[str] = mapped_column(Text, default="")  # text on the picture (Tesseract)
+
+    document: Mapped[SourceDocument] = relationship(back_populates="images")
+
+    @property
+    def url(self) -> str:
+        return f"/media/{self.path}"
+
+
+class KnowledgeItem(Base):
+    """One searchable piece of the knowledge base: a part of a file's text or a picture's description."""
+
+    __tablename__ = "knowledge_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("source_documents.id", ondelete="CASCADE"), index=True)
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("source_images.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(300), default="")
+    text: Mapped[str] = mapped_column(Text)
+    # Normalised vector from the local embedding model; empty when the model is not installed.
+    embedding: Mapped[list[float] | None] = mapped_column(JSON)
 
 
 class QuestionKind(StrEnum):

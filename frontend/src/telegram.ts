@@ -21,6 +21,8 @@ export const tg: TelegramWebApp | undefined = window.Telegram?.WebApp;
 export function initTelegram() {
   tg?.ready();
   tg?.expand();
+  // Inside Telegram follow its day/night setting; in a browser the CSS follows the system.
+  if (tg?.initData) document.documentElement.dataset.theme = tg.colorScheme;
 }
 
 export function confirmAction(message: string): Promise<boolean> {

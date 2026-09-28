@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
+from app import gamification
 from app.deps import ADMIN, CurrentUser, Session
 from app.models import Role, User
-from app.schemas import RoleIn, UserOut
+from app.schemas import LeaderboardOut, RoleIn, StatsOut, UserOut
 
 router = APIRouter(tags=["users"])
 
@@ -11,6 +12,16 @@ router = APIRouter(tags=["users"])
 @router.get("/me", response_model=UserOut)
 async def me(user: CurrentUser):
     return user
+
+
+@router.get("/me/stats", response_model=StatsOut)
+async def my_stats(session: Session, user: CurrentUser):
+    return await gamification.stats(session, user)
+
+
+@router.get("/leaderboard", response_model=LeaderboardOut)
+async def leaderboard(session: Session, user: CurrentUser):
+    return await gamification.leaderboard(session, user)
 
 
 @router.get("/users", response_model=list[UserOut], dependencies=[ADMIN])

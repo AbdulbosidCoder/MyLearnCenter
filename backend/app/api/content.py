@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from app import agent, notify
 from app.config import get_settings
 from app.deps import EDITOR, CurrentUser, Session
-from app.models import BlockType, Lesson, LessonBlock, Module, Role, User
+from app.models import BlockType, Lesson, LessonBlock, Module, Question, Role, User
 from app.progress import LessonState, lesson_states
 from app.schemas import (
     BlockIn,
@@ -76,6 +76,16 @@ async def list_modules(session: Session, user: CurrentUser):
     return result
 
 
+@router.get("/path", response_model=list[ModuleDetail])
+async def learning_path(session: Session, user: CurrentUser):
+    """All themes with their lessons, for the path on the home screen."""
+    modules = await session.scalars(
+        select(Module).order_by(Module.position, Module.id).options(selectinload(Module.lessons))
+    )
+    path = [await _module_detail(session, user, module) for module in modules]
+    return [m for m in path if m.lessons] if not _is_editor(user) else path
+
+
 @router.get("/modules/{module_id}", response_model=ModuleDetail)
 async def get_module(module_id: int, session: Session, user: CurrentUser):
     module = await session.scalar(
@@ -83,8 +93,14 @@ async def get_module(module_id: int, session: Session, user: CurrentUser):
     )
     if module is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Module not found")
+    return await _module_detail(session, user, module)
+
+
+async def _module_detail(session: Session, user: User, module: Module) -> ModuleDetail:
     lessons = [lesson for lesson in module.lessons if _is_editor(user) or not lesson.is_draft]
     states = await lesson_states(session, user, lessons)
+    ids = [lesson.id for lesson in lessons]
+    with_test = set(await session.scalars(select(Question.lesson_id).where(Question.lesson_id.in_(ids)).distinct()))
     return ModuleDetail(
         id=module.id,
         title=module.title,
@@ -93,7 +109,10 @@ async def get_module(module_id: int, session: Session, user: CurrentUser):
         lesson_count=sum(1 for lesson in lessons if not lesson.is_draft),
         draft_count=sum(1 for lesson in lessons if lesson.is_draft),
         lessons=[
-            LessonShort.model_validate(lesson).model_copy(update={"state": states[lesson.id]}) for lesson in lessons
+            LessonShort.model_validate(lesson).model_copy(
+                update={"state": states[lesson.id], "has_test": lesson.id in with_test}
+            )
+            for lesson in lessons
         ],
     )
 

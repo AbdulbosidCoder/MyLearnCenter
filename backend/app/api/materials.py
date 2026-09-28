@@ -1,3 +1,4 @@
+import shutil
 from pathlib import PurePath
 from typing import Annotated
 
@@ -6,12 +7,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
+from app import rag
 from app.agent import start_generation
 from app.config import get_settings
 from app.deps import EDITOR, Session
-from app.materials import MaterialError, parse_material
-from app.models import Module, SourceChunk, SourceDocument, SourceStatus, User
-from app.schemas import ChunkOut, MaterialDetail, MaterialOut
+from app.materials import MaterialError, read_material
+from app.models import IndexStatus, Module, SourceChunk, SourceDocument, SourceImage, SourceStatus, User
+from app.schemas import ChunkOut, ImageOut, MaterialDetail, MaterialOut
 
 router = APIRouter(tags=["materials"])
 
@@ -41,25 +43,34 @@ async def upload_material(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Module not found")
     try:
         # PDF parsing is CPU work; keep it off the event loop.
-        kind, chunks = await run_in_threadpool(parse_material, filename, data)
+        parsed = await run_in_threadpool(read_material, filename, data)
     except MaterialError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
     doc = SourceDocument(
         title=title.strip() or PurePath(filename).stem[:200],
         filename=filename[:255],
-        kind=kind,
-        char_count=sum(len(c.text) for c in chunks),
+        kind=parsed.kind,
+        char_count=sum(len(c.text) for c in parsed.chunks),
         module_id=module_id,
         uploaded_by=user.id,
+        index_status=IndexStatus.pending,
         chunks=[
             SourceChunk(position=i, heading=c.heading, text=c.text, char_count=len(c.text))
-            for i, c in enumerate(chunks)
+            for i, c in enumerate(parsed.chunks)
         ],
     )
     session.add(doc)
+    await session.flush()
+    session.add_all(await run_in_threadpool(rag.save_images, doc.id, parsed.images))
     await session.commit()
-    return MaterialOut.model_validate(doc).model_copy(update={"chunk_count": len(chunks)})
+    # Pictures are read and the knowledge base is filled in the background.
+    rag.start_indexing(doc.id)
+    return _out(doc, len(parsed.chunks), len(parsed.images))
+
+
+def _out(doc: SourceDocument, chunk_count: int, image_count: int) -> MaterialOut:
+    return MaterialOut.model_validate(doc).model_copy(update={"chunk_count": chunk_count, "image_count": image_count})
 
 
 @router.get("/materials", response_model=list[MaterialOut], dependencies=[EDITOR])
@@ -69,26 +80,50 @@ async def list_materials(session: Session):
         .group_by(SourceChunk.document_id)
         .subquery()
     )
+    pictures = (
+        select(SourceImage.document_id, func.count(SourceImage.id).label("n"))
+        .group_by(SourceImage.document_id)
+        .subquery()
+    )
     rows = await session.execute(
-        select(SourceDocument, func.coalesce(counts.c.n, 0))
+        select(SourceDocument, func.coalesce(counts.c.n, 0), func.coalesce(pictures.c.n, 0))
         .outerjoin(counts, counts.c.document_id == SourceDocument.id)
+        .outerjoin(pictures, pictures.c.document_id == SourceDocument.id)
         .order_by(SourceDocument.created_at.desc(), SourceDocument.id.desc())
     )
-    return [MaterialOut.model_validate(d).model_copy(update={"chunk_count": n}) for d, n in rows]
+    return [_out(d, n, m) for d, n, m in rows]
 
 
 @router.get("/materials/{material_id}", response_model=MaterialDetail, dependencies=[EDITOR])
 async def get_material(material_id: int, session: Session):
     doc = await session.scalar(
-        select(SourceDocument).where(SourceDocument.id == material_id).options(selectinload(SourceDocument.chunks))
+        select(SourceDocument)
+        .where(SourceDocument.id == material_id)
+        .options(selectinload(SourceDocument.chunks), selectinload(SourceDocument.images))
     )
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Material not found")
     return MaterialDetail(
-        **MaterialOut.model_validate(doc).model_dump(exclude={"chunk_count"}),
+        **MaterialOut.model_validate(doc).model_dump(exclude={"chunk_count", "image_count"}),
         chunk_count=len(doc.chunks),
+        image_count=len(doc.images),
         chunks=[ChunkOut.model_validate(c) for c in doc.chunks],
+        images=[ImageOut.model_validate(i) for i in doc.images],
     )
+
+
+@router.post("/materials/{material_id}/index", response_model=MaterialOut, status_code=202, dependencies=[EDITOR])
+async def reindex_material(material_id: int, session: Session):
+    """Reads the pictures and rebuilds the knowledge base again, e.g. after installing the vision models."""
+    doc = await session.get(SourceDocument, material_id)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Material not found")
+    if doc.index_status == IndexStatus.pending:
+        raise HTTPException(status.HTTP_409_CONFLICT, "ИИ уже изучает этот материал")
+    doc.index_status, doc.images_done = IndexStatus.pending, 0
+    await session.commit()
+    rag.start_indexing(doc.id)
+    return MaterialOut.model_validate(doc)
 
 
 @router.post("/materials/{material_id}/generate", response_model=MaterialOut, status_code=202, dependencies=[EDITOR])
@@ -103,6 +138,8 @@ async def generate_lessons(material_id: int, session: Session):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Material not found")
     if doc.status == SourceStatus.generating:
         raise HTTPException(status.HTTP_409_CONFLICT, "ИИ уже работает с этим материалом")
+    if doc.index_status == IndexStatus.pending:
+        raise HTTPException(status.HTTP_409_CONFLICT, "ИИ ещё изучает рисунки. Подождите немного.")
     chunk_count = await session.scalar(select(func.count(SourceChunk.id)).where(SourceChunk.document_id == doc.id))
     doc.status, doc.chunks_done, doc.error = SourceStatus.generating, 0, ""
     await session.commit()
@@ -117,4 +154,5 @@ async def delete_material(material_id: int, session: Session):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Material not found")
     await session.delete(doc)
     await session.commit()
+    shutil.rmtree(rag.media_root() / "materials" / str(material_id), ignore_errors=True)
     return Response(status_code=204)

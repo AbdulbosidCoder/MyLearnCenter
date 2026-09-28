@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # Claude API for the AI agent that turns uploaded files into lessons.
     anthropic_api_key: str = ""
     ai_model: str = "claude-opus-5"
+    # Local models for pictures and search (see app/vision.py, app/rag.py). Empty turns one off.
+    vision_model: str = "florence-community/Florence-2-base"
+    ocr_languages: str = "uzb+uzb_cyrl+rus+eng"
+    embedding_model: str = "intfloat/multilingual-e5-small"
+    # Uploaded pictures are stored here and served at /media.
+    media_dir: str = "media"
+    # Days for streaks and daily quests start at midnight in this time zone.
+    timezone: str = "Asia/Tashkent"
 
 
 @lru_cache

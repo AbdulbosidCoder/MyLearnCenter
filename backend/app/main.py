@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from app import rag
 from app.agent import fail_interrupted_jobs
 from app.api import router
 from app.config import get_settings
@@ -19,6 +20,7 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 async def lifespan(_: FastAPI):
     await init_db()
     await fail_interrupted_jobs()
+    await rag.resume_indexing()
     if get_settings().seed_demo_content:
         async with SessionLocal() as session:
             await seed_demo_content(session)
@@ -27,6 +29,9 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="MyLearnCenter", lifespan=lifespan)
 app.include_router(router)
+# Pictures from uploaded materials (see app/rag.py).
+rag.media_root().mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=rag.media_root()), name="media")
 
 
 @app.get("/health")
