@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 
 import { api, type Leaderboard, type Quest, type Stats } from "../api";
 import { canEdit, useLoad, useUser } from "../hooks";
-import { BoltIcon, ClockIcon, FlameIcon, HomeIcon, RobotIcon, TargetIcon, TrophyIcon, UserIcon, UsersIcon } from "./Icons";
+import { BoltIcon, ClockIcon, FlameIcon, FolderIcon, HomeIcon, RobotIcon, TargetIcon, TrophyIcon, UserIcon, UsersIcon } from "./Icons";
 
 /** Page frame: menu on the left (a tab bar on phones), content in the middle, quests and rating on the right. */
 export function Shell({ children }: { children: ReactNode }) {
@@ -13,15 +13,17 @@ export function Shell({ children }: { children: ReactNode }) {
   const { data: stats } = useLoad(api.stats, [pathname]);
   const { data: board } = useLoad(api.leaderboard, [pathname]);
 
+  // Teacher tools stay out of the phone tab bar; on phones they are linked from the profile.
   const items = [
     { to: "/", label: "Обучение", icon: HomeIcon, end: true },
+    { to: "/assistant", label: "ИИ", icon: RobotIcon },
     { to: "/leaderboard", label: "Рейтинг", icon: TrophyIcon },
     { to: "/quests", label: "Задания", icon: TargetIcon },
     { to: "/profile", label: "Профиль", icon: UserIcon },
-    ...(canEdit(user) ? [{ to: "/materials", label: "ИИ-материалы", icon: RobotIcon }] : []),
-    ...(user.role === "admin" ? [{ to: "/admin", label: "Пользователи", icon: UsersIcon }] : []),
+    ...(canEdit(user) ? [{ to: "/materials", label: "Материалы", icon: FolderIcon, deskOnly: true }] : []),
+    ...(user.role === "admin" ? [{ to: "/admin", label: "Пользователи", icon: UsersIcon, deskOnly: true }] : []),
   ];
-  const wide = pathname === "/" || pathname === "/leaderboard" || pathname === "/quests" || pathname === "/profile";
+  const wide = ["/", "/leaderboard", "/quests", "/profile", "/assistant"].includes(pathname);
 
   return (
     <div className="shell">
@@ -29,8 +31,8 @@ export function Shell({ children }: { children: ReactNode }) {
         <Link to="/" className="logo">
           mylearn<span>center</span>
         </Link>
-        {items.map(({ to, label, icon: Icon, end }) => (
-          <NavLink key={to} to={to} end={end} className="nav-item">
+        {items.map(({ to, label, icon: Icon, end, deskOnly }) => (
+          <NavLink key={to} to={to} end={end} className={`nav-item${deskOnly ? " desk-only" : ""}`}>
             <Icon size={30} />
             <span>{label}</span>
           </NavLink>

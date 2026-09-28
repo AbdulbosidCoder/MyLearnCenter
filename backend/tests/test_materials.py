@@ -112,7 +112,7 @@ async def test_bad_files_are_explained(client):
     r = await client.post("/api/materials", files={"file": ("old.doc", b"x")}, headers=h)
     assert r.status_code == 422 and ".docx" in r.json()["detail"]
     r = await client.post("/api/materials", files={"file": ("scan.pdf", make_pdf([[]]))}, headers=h)
-    assert r.status_code == 422 and "скан" in r.json()["detail"]
+    assert r.status_code == 422 and "нет ни текста" in r.json()["detail"]
     r = await client.post("/api/materials", files={"file": ("broken.docx", b"not a zip")}, headers=h)
     assert r.status_code == 422
 

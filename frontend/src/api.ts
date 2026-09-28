@@ -60,13 +60,24 @@ export interface Material {
   id: number;
   title: string;
   filename: string;
-  kind: "pdf" | "docx" | "text";
+  kind: "pdf" | "docx" | "text" | "image";
   status: "parsed" | "generating" | "draft_ready" | "failed";
   char_count: number;
   chunks_done: number;
   error: string;
   module_id: number | null;
   chunk_count: number;
+  /** Reading the pictures and filling the knowledge base, after the upload. */
+  index_status: "pending" | "ready" | "failed";
+  images_done: number;
+  image_count: number;
+}
+export interface MaterialImage {
+  id: number;
+  number: number;
+  url: string;
+  caption: string;
+  ocr_text: string;
 }
 export interface MaterialChunk {
   id: number;
@@ -77,6 +88,18 @@ export interface MaterialChunk {
 }
 export interface MaterialDetail extends Material {
   chunks: MaterialChunk[];
+  images: MaterialImage[];
+}
+export interface AiStatus {
+  claude: boolean;
+  ocr_languages: string;
+  captions: boolean;
+  embeddings: boolean;
+}
+export interface AskResult {
+  answer: string;
+  image_text: string;
+  sources: { title: string; image_url: string | null }[];
 }
 
 export interface Question {
@@ -197,5 +220,15 @@ export const api = {
     return request<Material>("POST", "/materials", form);
   },
   generateLessons: (id: number) => request<Material>("POST", `/materials/${id}/generate`),
+  reindexMaterial: (id: number) => request<Material>("POST", `/materials/${id}/index`),
+
+  aiStatus: () => request<AiStatus>("GET", "/ai/status"),
+  ask: (question: string, lessonId: number | null, image: File | null) => {
+    const form = new FormData();
+    form.append("question", question);
+    if (lessonId !== null) form.append("lesson_id", String(lessonId));
+    if (image) form.append("image", image);
+    return request<AskResult>("POST", "/ai/ask", form);
+  },
   deleteMaterial: (id: number) => request<void>("DELETE", `/materials/${id}`),
 };

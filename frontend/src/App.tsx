@@ -4,6 +4,7 @@ import { api } from "./api";
 import { ErrorBox, Loading } from "./components/Status";
 import { UserContext, useLoad } from "./hooks";
 import AdminPage from "./pages/AdminPage";
+import AssistantPage from "./pages/AssistantPage";
 import { Shell } from "./components/Shell";
 import HomePage from "./pages/HomePage";
 import LeaderboardPage from "./pages/LeaderboardPage";
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/modules/:id" element={<ModulePage />} />
           <Route path="/lessons/:id" element={<LessonPage />} />
           <Route path="/lessons/:id/quiz" element={<QuizPage />} />
+          <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/quests" element={<QuestsPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />

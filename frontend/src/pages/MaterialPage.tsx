@@ -14,7 +14,7 @@ export default function MaterialPage() {
   const { data: material, error, reload } = useLoad(() => api.material(id), [id]);
 
   // While the AI agent works, refresh every few seconds to move the progress bar.
-  const generating = material?.status === "generating";
+  const generating = material?.status === "generating" || material?.index_status === "pending";
   useEffect(() => {
     if (!generating) return;
     const timer = setInterval(reload, 3000);
@@ -37,6 +37,33 @@ export default function MaterialPage() {
           </p>
 
           <AgentCard material={material} onStarted={reload} />
+
+          {material.images.length > 0 && (
+            <>
+              <h2>Рисунки</h2>
+              <p className="muted small">
+                Их прочитали локальные модели: Florence-2 описывает, что изображено, Tesseract читает текст. Агент вставит
+                подходящие рисунки в уроки.
+              </p>
+              <ul className="figures">
+                {material.images.map((img) => (
+                  <li key={img.id} className="card figure">
+                    <img src={img.url} alt={`Рисунок ${img.number}`} loading="lazy" />
+                    <div className="grow">
+                      <strong>Рисунок {img.number}</strong>
+                      {img.caption && <span className="small block">{img.caption}</span>}
+                      {img.ocr_text && <span className="muted small block ocr">Текст: {img.ocr_text}</span>}
+                      {!img.caption && !img.ocr_text && (
+                        <span className="muted small block">
+                          {material.index_status === "pending" ? "Читается…" : "Ничего не прочитано."}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           <h2>Части файла</h2>
           <ol className="list">
@@ -89,6 +116,19 @@ function AgentCard({ material, onStarted }: { material: MaterialDetail; onStarte
     }
   }
 
+  if (material.index_status === "pending") {
+    return (
+      <div className="card agent-card">
+        <strong>🔎 ИИ изучает рисунки…</strong>
+        <progress value={material.images_done} max={Math.max(material.image_count, 1)} />
+        <span className="muted small">
+          Прочитано рисунков: {material.images_done} из {material.image_count}. Потом материал попадёт в базу знаний, и
+          можно будет создавать уроки.
+        </span>
+      </div>
+    );
+  }
+
   if (material.status === "generating") {
     return (
       <div className="card agent-card">
@@ -126,6 +166,18 @@ function AgentCard({ material, onStarted }: { material: MaterialDetail; onStarte
           {material.status === "failed" ? "🤖 Попробовать снова" : "🤖 Создать уроки с ИИ"}
         </button>
       )}
+      {material.index_status === "failed" && (
+        <ErrorBox message="Не удалось прочитать рисунки. Уроки можно создать и без них." />
+      )}
+      <button
+        className="secondary small"
+        onClick={async () => {
+          await api.reindexMaterial(material.id);
+          onStarted();
+        }}
+      >
+        Прочитать рисунки заново
+      </button>
     </div>
   );
 }

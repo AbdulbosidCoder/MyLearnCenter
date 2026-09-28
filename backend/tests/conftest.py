@@ -11,11 +11,14 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tempfile.mkdtemp()}/test.db"
 os.environ["BOT_TOKEN"] = "123:test-token"
 os.environ["ADMIN_TG_ID"] = "1"
 os.environ["DEV_MODE"] = "false"
+os.environ["MEDIA_DIR"] = tempfile.mkdtemp()
+# No model downloads in tests: pictures are read by the fake below, search matches words.
+os.environ["EMBEDDING_MODEL"] = ""
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
-from app import notify  # noqa: E402
+from app import notify, rag, vision  # noqa: E402
 from app.db import Base, SessionLocal, engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.seed import seed_demo_content  # noqa: E402
@@ -78,3 +81,14 @@ def outbox(monkeypatch):
     monkeypatch.setattr(notify, "_send", record)
     monkeypatch.setattr(notify, "PAUSE", 0)
     return box
+
+
+@pytest.fixture(autouse=True)
+def fake_vision(monkeypatch):
+    """Every picture reads as the same chart; tests that need more replace this."""
+    monkeypatch.setattr(vision, "read_image", lambda data: vision.ImageText("a bar chart of mean values", "Mean = 5"))
+
+
+async def indexed() -> None:
+    """Waits until the background reading of uploaded pictures is over."""
+    await asyncio.gather(*rag._running)

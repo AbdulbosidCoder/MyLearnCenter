@@ -2,7 +2,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models import BlockType, QuestionKind, Role, SourceKind, SourceStatus
+from app.models import BlockType, IndexStatus, QuestionKind, Role, SourceKind, SourceStatus
 from app.progress import LessonState
 from app.widgets import parse_viz
 
@@ -129,6 +129,17 @@ class MaterialOut(ORM):
     error: str
     module_id: int | None
     chunk_count: int = 0
+    index_status: IndexStatus
+    images_done: int
+    image_count: int = 0
+
+
+class ImageOut(ORM):
+    id: int
+    number: int
+    url: str
+    caption: str
+    ocr_text: str
 
 
 class ChunkOut(ORM):
@@ -141,6 +152,25 @@ class ChunkOut(ORM):
 
 class MaterialDetail(MaterialOut):
     chunks: list[ChunkOut]
+    images: list[ImageOut]
+
+
+class AiStatus(BaseModel):
+    claude: bool
+    ocr_languages: str
+    captions: bool
+    embeddings: bool
+
+
+class Source(BaseModel):
+    title: str
+    image_url: str | None = None
+
+
+class AskOut(BaseModel):
+    answer: str
+    image_text: str = ""
+    sources: list[Source]
 
 
 class QuestionIn(BaseModel):

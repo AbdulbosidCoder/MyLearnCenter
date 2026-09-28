@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, type BlockType } from "../api";
 import { BackButton } from "../components/BackButton";
 import { AiRewrite } from "../components/AiRewrite";
+import { AskAi } from "../components/AskAi";
 import { BlockView } from "../components/BlockView";
 import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
@@ -57,6 +58,14 @@ export default function LessonPage() {
           <span className="muted small block">Вопросов: {lesson.question_count}. Для прохождения нужно 70% верных ответов.</span>
         </Link>
       )}
+
+      <details className="card ask-card">
+        <summary>
+          <strong>🤖 Спросить ИИ по уроку</strong>
+          <span className="muted small block">Непонятно? Спросите словами или сфотографируйте задачу.</span>
+        </summary>
+        <AskAi lessonId={lesson.id} placeholder="Что непонятно в этом уроке?" />
+      </details>
 
       {canEdit(user) && <NewBlockForm lessonId={id} position={lesson.blocks.length} onCreated={reload} />}
 

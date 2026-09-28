@@ -131,3 +131,11 @@ export const ListIcon = (p: IconProps) => (
     <path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </Svg>
 );
+
+export const FolderIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#f0b400" />
+    <path d="M3 9h18v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#ffc53d" />
+    <path d="M12 11v6M9.5 13.5 12 11l2.5 2.5" stroke="#8a5a00" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);

@@ -18,7 +18,7 @@ import anthropic
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, update
 
-from app import notify
+from app import notify, rag, vision
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import (
@@ -29,9 +29,11 @@ from app.models import (
     Question,
     SourceChunk,
     SourceDocument,
+    SourceImage,
     SourceStatus,
     User,
 )
+from app.materials import figure_numbers
 from app.schemas import QuestionIn
 from app.widgets import WIDGETS, viz_content
 
@@ -56,6 +58,8 @@ class LessonDraft(BaseModel):
     questions: list[dict] = []
     # A widget name from app/widgets.py, or "none".
     visualization: str = "none"
+    # Numbers of the material's pictures ("[Рисунок N]") to show in the lesson.
+    figures: list[int] = []
 
     def valid_questions(self) -> list[QuestionIn]:
         valid = []
@@ -99,6 +103,7 @@ PART_SCHEMA = _schema(
                         "items": _schema({"heading": {"type": "string"}, "text": {"type": "string"}}),
                     },
                     "visualization": {"type": "string", "enum": ["none", *WIDGETS]},
+                    "figures": {"type": "array", "items": {"type": "integer"}},
                     "questions": {
                         "type": "array",
                         "items": _schema(
@@ -136,8 +141,10 @@ PART_PROMPT = """Here is part {n} of {total} of the material "{doc_title}" (sect
 <material>
 {text}
 </material>
-
+{figures}{related}
 Turn this part into 1 to 3 short lessons. Each lesson teaches one idea and takes 3 to 5 minutes.
+Explain deeper and more precisely than the material does: say why the idea works, go step by step, \
+and work through at least one example with real numbers or code.
 
 - title: a short, concrete lesson name.
 - level: 1 = basics (a first-time learner follows it), 2 = practice (needs the basics), \
@@ -157,6 +164,10 @@ result, pick the right method) over recalling a definition word for word.
 - visualization: an interactive widget the app can show after the first card, or "none". Pick one \
 only when it really shows this lesson's idea:
 {widgets}
+
+- figures: numbers of the pictures above that help to understand this lesson (a chart, a diagram, \
+a table), shown to the student after the first card. Refer to them in the cards ("на рисунке..."). \
+Use [] when there are no pictures or none fits.
 
 If this part has no teachable content (a table of contents, references, a preface), return an \
 empty list of lessons."""
@@ -185,19 +196,19 @@ def _client() -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(api_key=get_settings().anthropic_api_key)
 
 
-async def ask_claude(prompt: str, schema: dict) -> dict | None:
-    """One structured request. Returns None when Claude declines to answer this piece."""
+async def _call(system: str, prompt: str, **extra):
+    """One request to Claude; API failures become AgentError with a message for the user."""
     settings = get_settings()
     try:
-        response = await _client().beta.messages.create(
+        return await _client().beta.messages.create(
             model=settings.ai_model,
             max_tokens=16000,
-            system=SYSTEM,
+            system=system,
             messages=[{"role": "user", "content": prompt}],
-            output_config={"format": {"type": "json_schema", "schema": schema}},
             # If a safety classifier declines, the API retries on a fallback model in the same call.
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
+            **extra,
         )
     except anthropic.AuthenticationError as exc:
         raise AgentError("Неверный ключ ANTHROPIC_API_KEY.") from exc
@@ -212,6 +223,18 @@ async def ask_claude(prompt: str, schema: dict) -> dict | None:
     except anthropic.APIConnectionError as exc:
         raise AgentError("Нет связи с Claude API.") from exc
 
+
+async def ask_text(system: str, prompt: str) -> str:
+    """A free-form answer in Markdown; empty when Claude declines."""
+    response = await _call(system, prompt)
+    if response.stop_reason == "refusal":
+        return ""
+    return "".join(b.text for b in response.content if b.type == "text").strip()
+
+
+async def ask_claude(prompt: str, schema: dict) -> dict | None:
+    """One structured request. Returns None when Claude declines to answer this piece."""
+    response = await _call(SYSTEM, prompt, output_config={"format": {"type": "json_schema", "schema": schema}})
     if response.stop_reason in ("refusal", "max_tokens"):
         return None
     text = next((b.text for b in response.content if b.type == "text"), "")
@@ -221,13 +244,56 @@ async def ask_claude(prompt: str, schema: dict) -> dict | None:
         return None
 
 
-async def lessons_for_part(doc_title: str, chunk: SourceChunk, total: int) -> list[LessonDraft]:
+FIGURES_PROMPT = """
+The material has pictures; the app read them with a local vision model and OCR:
+<pictures>
+{items}
+</pictures>
+"""
+
+RELATED_PROMPT = """
+Other parts of the same material on this topic, for context only (do not make lessons from them):
+<related>
+{items}
+</related>
+"""
+
+# Limits for what the knowledge base adds to one request.
+MAX_FIGURE_CHARS = 1500
+RELATED_PARTS = 2
+MAX_RELATED_CHARS = 1500
+
+
+def _figures_block(images: dict[int, SourceImage], numbers: list[int]) -> str:
+    items = []
+    for n in numbers:
+        img = images.get(n)
+        if img is not None:
+            about = vision.ImageText(img.caption, img.ocr_text).describe()[:MAX_FIGURE_CHARS]
+            items.append(f"[Рисунок {n}]\n{about}")
+    return FIGURES_PROMPT.format(items="\n\n".join(items)) if items else ""
+
+
+async def _related_block(document_id: int, chunk: SourceChunk) -> str:
+    async with SessionLocal() as session:
+        found = await rag.search(session, chunk.text[:2000], document_ids=[document_id], k=RELATED_PARTS + 1)
+    parts = [item for item, _ in found if item.image_id is None and item.text != chunk.text][:RELATED_PARTS]
+    if not parts:
+        return ""
+    return RELATED_PROMPT.format(items="\n\n".join(f"{p.title}\n{p.text[:MAX_RELATED_CHARS]}" for p in parts))
+
+
+async def lessons_for_part(
+    doc_title: str, chunk: SourceChunk, total: int, figures: str = "", related: str = ""
+) -> list[LessonDraft]:
     prompt = PART_PROMPT.format(
         n=chunk.position + 1,
         total=total,
         doc_title=doc_title,
         heading=chunk.heading,
         text=chunk.text,
+        figures=figures,
+        related=related,
         widgets="\n".join(f"  - {name}: {w['about']}" for name, w in WIDGETS.items()),
     )
     data = await ask_claude(prompt, PART_SCHEMA)
@@ -259,15 +325,22 @@ async def plan_theme(doc_title: str, drafts: list[LessonDraft]) -> ThemePlan:
     return plan
 
 
-def _blocks(draft: LessonDraft) -> list[LessonBlock]:
+def _blocks(draft: LessonDraft, images: dict[int, SourceImage] | None = None) -> list[LessonBlock]:
     blocks = [
         LessonBlock(type=BlockType.text, content=f"### {card.heading}\n\n{card.text}") for card in draft.cards
     ]
+    images = images or {}
+    pictures = [
+        LessonBlock(type=BlockType.image, content=images[n].url, caption=f"Рисунок {n}")
+        for n in dict.fromkeys(draft.figures)
+        if n in images
+    ]
+    blocks[1:1] = pictures
     if draft.visualization in WIDGETS:
         viz = LessonBlock(
             type=BlockType.viz, content=viz_content(draft.visualization), caption=WIDGETS[draft.visualization]["title"]
         )
-        blocks.insert(1, viz)
+        blocks.insert(1 + len(pictures), viz)
     for i, block in enumerate(blocks):
         block.position = i
     return blocks
@@ -357,6 +430,10 @@ async def _generate(document_id: int) -> None:
             )
         ).all()
         doc_title, target_module_id = doc.title, doc.module_id
+        images = {
+            img.number: img
+            for img in await session.scalars(select(SourceImage).where(SourceImage.document_id == document_id))
+        }
 
     limit = asyncio.Semaphore(PARALLEL_REQUESTS)
     done = 0
@@ -364,7 +441,9 @@ async def _generate(document_id: int) -> None:
     async def one(chunk: SourceChunk) -> list[LessonDraft]:
         nonlocal done
         async with limit:
-            drafts = await lessons_for_part(doc_title, chunk, len(chunks))
+            figures = _figures_block(images, figure_numbers(chunk.text))
+            related = await _related_block(document_id, chunk)
+            drafts = await lessons_for_part(doc_title, chunk, len(chunks), figures, related)
         done += 1
         await _set(document_id, chunks_done=done)
         return drafts
@@ -397,7 +476,7 @@ async def _generate(document_id: int) -> None:
                     position=start + offset,
                     level=draft.level,
                     is_draft=True,
-                    blocks=_blocks(draft),
+                    blocks=_blocks(draft, images),
                     questions=[
                         Question(position=i, **q.model_dump(exclude={"position"}))
                         for i, q in enumerate(draft.valid_questions())

@@ -6,7 +6,7 @@ import { BackButton } from "../components/BackButton";
 import { ErrorBox, Loading } from "../components/Status";
 import { canEdit, useLoad, useUser } from "../hooks";
 
-const KIND_NAMES: Record<Material["kind"], string> = { pdf: "PDF", docx: "Word", text: "Текст" };
+const KIND_NAMES: Record<Material["kind"], string> = { pdf: "PDF", docx: "Word", text: "Текст", image: "Картинка" };
 const STATUS_NAMES: Record<Material["status"], string> = {
   parsed: "",
   generating: "ИИ пишет уроки…",
@@ -32,10 +32,11 @@ export default function MaterialsPage() {
       </Link>
       <h1>Материалы для ИИ</h1>
       <p className="muted small">
-        Загрузите тему файлом любого размера. Система достанет текст и разрежет его на короткие части по заголовкам.
-        Из этих частей ИИ-агент соберёт уроки, уровни и тесты.
+        Загрузите тему файлом любого размера: PDF, Word, текст или картинку. Система достанет текст и рисунки,
+        прочитает рисунки и сканы и разрежет всё на короткие части. Из них ИИ-агент соберёт уроки, уровни и тесты.
       </p>
 
+      <ModelsCard />
       <UploadForm onUploaded={reload} />
 
       <h2>Загруженные файлы</h2>
@@ -50,6 +51,8 @@ export default function MaterialsPage() {
                 <strong>{m.title}</strong>
                 <span className="muted small block">
                   {KIND_NAMES[m.kind]} · частей: {m.chunk_count} · {formatChars(m.char_count)}
+                  {m.image_count > 0 && ` · рисунков: ${m.image_count}`}
+                  {m.index_status === "pending" && " · ИИ изучает рисунки…"}
                   {STATUS_NAMES[m.status] && ` · ${STATUS_NAMES[m.status]}`}
                 </span>
               </span>
@@ -58,6 +61,27 @@ export default function MaterialsPage() {
         ))}
       </ul>
     </>
+  );
+}
+
+/** Which local models work on this server, so a teacher knows what the agent can read. */
+function ModelsCard() {
+  const { data: status } = useLoad(api.aiStatus, []);
+  if (!status) return null;
+  const rows = [
+    { on: status.claude, name: "Claude", about: "пишет уроки и тесты" },
+    { on: Boolean(status.ocr_languages), name: "Tesseract", about: `читает текст на рисунках и сканах${status.ocr_languages ? ` (${status.ocr_languages})` : ""}` },
+    { on: status.captions, name: "Florence-2", about: "описывает графики, схемы и таблицы" },
+    { on: status.embeddings, name: "multilingual-e5", about: "ищет нужные части материала по смыслу" },
+  ];
+  return (
+    <div className="card models">
+      {rows.map((r) => (
+        <span key={r.name} className={r.on ? "on" : "off"}>
+          {r.on ? "✓" : "✕"} <strong>{r.name}</strong> {r.about}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -94,7 +118,7 @@ function UploadForm({ onUploaded }: { onUploaded: () => void }) {
       <input
         key={inputKey}
         type="file"
-        accept=".pdf,.docx,.txt,.md"
+        accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         required
       />

@@ -1,8 +1,10 @@
+import { Link } from "react-router-dom";
+
 import { api } from "../api";
 import { BoltIcon, FlameIcon, TrophyIcon } from "../components/Icons";
 import { Mascot } from "../components/Mascot";
 import { ErrorBox, Loading } from "../components/Status";
-import { useLoad, useUser } from "../hooks";
+import { canEdit, useLoad, useUser } from "../hooks";
 
 const ROLE_NAMES = { admin: "Администратор", teacher: "Преподаватель", student: "Студент" };
 
@@ -41,6 +43,19 @@ export default function ProfilePage() {
           <span className="muted small">тестов сдано</span>
         </div>
       </div>
+      {canEdit(user) && (
+        <>
+          <h2>Для преподавателя</h2>
+          <Link to="/materials" className="card link-card">
+            📂 Материалы для ИИ: PDF, Word, текст и картинки
+          </Link>
+          {user.role === "admin" && (
+            <Link to="/admin" className="card link-card">
+              👥 Пользователи и роли
+            </Link>
+          )}
+        </>
+      )}
     </>
   );
 }

@@ -1,7 +1,9 @@
-"""Turns an uploaded file (PDF, Word, text) into short parts the AI agent can read one at a time.
+"""Turns an uploaded file (PDF, Word, text, image) into short parts the AI agent can read one at a time.
 
 Nothing here calls the AI: we only extract the text and cut it along headings and paragraphs,
 so a 300-page book becomes a list of parts of a few thousand characters each.
+Pictures are pulled out too. Where a picture stood, the text gets a marker "[Рисунок N]", so the
+agent later knows which part a picture belongs to (see app/vision.py for reading the pictures).
 """
 
 import io
@@ -23,7 +25,18 @@ EXTENSIONS = {
     ".txt": SourceKind.text,
     ".md": SourceKind.text,
     ".markdown": SourceKind.text,
+    ".png": SourceKind.image,
+    ".jpg": SourceKind.image,
+    ".jpeg": SourceKind.image,
+    ".webp": SourceKind.image,
 }
+
+# Pictures smaller than this are icons, bullets or lines, not figures worth explaining.
+MIN_IMAGE_BYTES = 3_000
+MIN_IMAGE_SIDE = 64
+MAX_IMAGES = 200
+FIGURE = "[Рисунок {n}]"
+FIGURE_RE = re.compile(r"\[Рисунок (\d+)\]")
 
 
 class MaterialError(ValueError):
@@ -42,12 +55,52 @@ class Chunk:
     text: str
 
 
+@dataclass
+class Image:
+    number: int  # the N in "[Рисунок N]", from 1
+    data: bytes
+    ext: str  # "png", "jpeg", ...
+
+
+@dataclass
+class ParsedMaterial:
+    kind: SourceKind
+    chunks: list[Chunk]
+    images: list[Image]
+
+
+class _Figures:
+    """Collects pictures while the text is read and hands out their markers."""
+
+    def __init__(self) -> None:
+        self.images: list[Image] = []
+
+    def add(self, data: bytes, ext: str) -> Paragraph | None:
+        if len(self.images) >= MAX_IMAGES or not _big_enough(data):
+            return None
+        image = Image(number=len(self.images) + 1, data=data, ext=ext.lower().lstrip(".").replace("jpg", "jpeg"))
+        self.images.append(image)
+        return Paragraph(FIGURE.format(n=image.number))
+
+
+def _big_enough(data: bytes) -> bool:
+    if len(data) < MIN_IMAGE_BYTES:
+        return False
+    try:
+        from PIL import Image as PILImage
+
+        with PILImage.open(io.BytesIO(data)) as img:
+            return min(img.size) >= MIN_IMAGE_SIDE
+    except Exception:  # Pillow missing or a format it cannot read: keep the picture
+        return True
+
+
 def detect_kind(filename: str) -> SourceKind:
     ext = PurePath(filename).suffix.lower()
     if ext == ".doc":
         raise MaterialError("Старый формат .doc не поддерживается. Сохраните файл в Word как .docx.")
     if ext not in EXTENSIONS:
-        raise MaterialError("Поддерживаются файлы PDF, Word (.docx) и текст (.txt, .md).")
+        raise MaterialError("Поддерживаются PDF, Word (.docx), текст (.txt, .md) и картинки (.png, .jpg, .webp).")
     return EXTENSIONS[ext]
 
 
@@ -102,7 +155,7 @@ def _decode(data: bytes) -> str:
     return data.decode("latin-1")
 
 
-def _extract_pdf(data: bytes) -> list[Paragraph]:
+def _extract_pdf(data: bytes, figures: _Figures) -> list[Paragraph]:
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
 
@@ -110,14 +163,29 @@ def _extract_pdf(data: bytes) -> list[Paragraph]:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted:
             raise MaterialError("PDF защищён паролем. Снимите защиту и загрузите снова.")
-        pages = [page.extract_text() or "" for page in reader.pages]
+        paragraphs: list[Paragraph] = []
+        for page in reader.pages:
+            paragraphs += _split_plain(page.extract_text() or "", markdown=False)
+            # PDF does not say where on the page a picture sits, so its marker goes after the page text.
+            for picture in _page_images(page):
+                marker = figures.add(picture.data, PurePath(picture.name).suffix or ".png")
+                if marker:
+                    paragraphs.append(marker)
     except PdfReadError as exc:
         raise MaterialError("Не удалось прочитать PDF: файл повреждён.") from exc
-    return _split_plain("\n\n".join(pages), markdown=False)
+    return paragraphs
 
 
-def _extract_docx(data: bytes) -> list[Paragraph]:
+def _page_images(page) -> list:
+    try:
+        return list(page.images)
+    except Exception:  # an unusual image encoding must not lose the page text
+        return []
+
+
+def _extract_docx(data: bytes, figures: _Figures) -> list[Paragraph]:
     from docx import Document
+    from docx.oxml.ns import qn
 
     try:
         doc = Document(io.BytesIO(data))
@@ -127,11 +195,16 @@ def _extract_docx(data: bytes) -> list[Paragraph]:
     paragraphs: list[Paragraph] = []
     for p in doc.paragraphs:
         text = p.text.strip()
-        if not text:
-            continue
-        style = (p.style.name if p.style is not None else "").lower()
-        is_heading = style.startswith(("heading", "title", "заголовок", "название"))
-        paragraphs.append(Paragraph(text, is_heading=is_heading))
+        if text:
+            style = (p.style.name if p.style is not None else "").lower()
+            is_heading = style.startswith(("heading", "title", "заголовок", "название"))
+            paragraphs.append(Paragraph(text, is_heading=is_heading))
+        for blip in p._p.xpath(".//a:blip"):
+            part = doc.part.related_parts.get(blip.get(qn("r:embed")))
+            if part is not None:
+                marker = figures.add(part.blob, PurePath(part.partname).suffix)
+                if marker:
+                    paragraphs.append(marker)
     for table in doc.tables:
         rows = [" | ".join(cell.text.strip() for cell in row.cells) for row in table.rows]
         if rows:
@@ -139,18 +212,20 @@ def _extract_docx(data: bytes) -> list[Paragraph]:
     return paragraphs
 
 
-def extract_paragraphs(kind: SourceKind, filename: str, data: bytes) -> list[Paragraph]:
+def extract_paragraphs(kind: SourceKind, filename: str, data: bytes, figures: _Figures | None = None) -> list[Paragraph]:
+    figures = figures if figures is not None else _Figures()
     if kind == SourceKind.pdf:
-        paragraphs = _extract_pdf(data)
+        paragraphs = _extract_pdf(data, figures)
     elif kind == SourceKind.docx:
-        paragraphs = _extract_docx(data)
+        paragraphs = _extract_docx(data, figures)
+    elif kind == SourceKind.image:
+        figures.images.append(Image(number=1, data=data, ext=PurePath(filename).suffix.lower().lstrip(".").replace("jpg", "jpeg")))
+        paragraphs = [Paragraph(FIGURE.format(n=1))]
     else:
         markdown = PurePath(filename).suffix.lower() in (".md", ".markdown")
         paragraphs = _split_plain(_decode(data), markdown=markdown)
     if not paragraphs:
-        if kind == SourceKind.pdf:
-            raise MaterialError("В PDF нет текста. Похоже, это скан: распознавание сканов добавим позже.")
-        raise MaterialError("В файле нет текста.")
+        raise MaterialError("В файле нет ни текста, ни рисунков.")
     return paragraphs
 
 
@@ -214,6 +289,17 @@ def split_into_chunks(paragraphs: list[Paragraph]) -> list[Chunk]:
     return chunks
 
 
-def parse_material(filename: str, data: bytes) -> tuple[SourceKind, list[Chunk]]:
+def read_material(filename: str, data: bytes) -> ParsedMaterial:
     kind = detect_kind(filename)
-    return kind, split_into_chunks(extract_paragraphs(kind, filename, data))
+    figures = _Figures()
+    chunks = split_into_chunks(extract_paragraphs(kind, filename, data, figures))
+    return ParsedMaterial(kind=kind, chunks=chunks, images=figures.images)
+
+
+def parse_material(filename: str, data: bytes) -> tuple[SourceKind, list[Chunk]]:
+    parsed = read_material(filename, data)
+    return parsed.kind, parsed.chunks
+
+
+def figure_numbers(text: str) -> list[int]:
+    return [int(n) for n in FIGURE_RE.findall(text)]

@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app import agent
 from app.config import get_settings
 from app.db import engine, init_db
-from tests.conftest import ADMIN_ID, auth
+from tests.conftest import ADMIN_ID, auth, indexed
 
 MATERIAL = "# Mean\n\nThe mean is the sum divided by the count.\n\n" + "More about the mean. " * 60 + (
     "\n\n# Variance\n\nVariance is the spread of the data.\n\n" + "More about variance. " * 60
@@ -21,7 +21,8 @@ def fake_claude(refuse_second_part: bool = False):
             return {"title": "Statistics basics", "description": "Centre and spread.", "order": [2, 1, 2, 99]}
         if refuse_second_part and "part 2 of" in prompt:
             return None
-        topic = "Mean" if "Mean" in prompt else "Variance"
+        material = prompt.split("<material>")[1].split("</material>")[0]
+        topic = "Mean" if "mean" in material.lower() else "Variance"
         return {
             "lessons": [
                 {
@@ -51,6 +52,7 @@ async def upload(client) -> dict:
         "/api/materials", files={"file": ("stats.md", MATERIAL.encode())}, headers=auth(ADMIN_ID)
     )
     assert r.status_code == 201
+    await indexed()
     return r.json()
 
 
@@ -114,6 +116,7 @@ async def test_agent_adds_to_chosen_theme_and_reports_skipped_parts(client, ai_k
         data={"module_id": str(stats["id"])},
         headers=auth(ADMIN_ID),
     )
+    await indexed()
     done = await run_agent(client, r.json()["id"])
     assert done["status"] == "draft_ready" and done["module_id"] == stats["id"]
     assert "1" in done["error"]

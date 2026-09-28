@@ -1,0 +1,7 @@
+# Local models for pictures and search (optional, about 1 GB with CPU-only torch):
+#   pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-vision.txt
+# Florence-2 describes pictures, multilingual-e5-small finds course material by meaning.
+# OCR also needs the tesseract binary: apt install tesseract-ocr tesseract-ocr-uzb tesseract-ocr-uzb-cyrl tesseract-ocr-rus
+torch==2.14.0
+transformers==5.17.0
+sentence-transformers==6.1.0

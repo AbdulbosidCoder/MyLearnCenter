@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: mlc
       POSTGRES_DB: mlc
     ports:
-      -"5444:5432"
+      - "5444:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -23,6 +23,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://mlc:mlc@db:5432/mlc
     ports:
       - "8000:8000"
+    volumes:
+      - media:/app/media
+      - models:/app/models
     depends_on:
       db:
         condition: service_healthy
@@ -55,3 +58,5 @@ services:
 
 volumes:
   db-data:
+  media:
+  models:
