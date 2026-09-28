@@ -5,6 +5,8 @@ services:
       POSTGRES_USER: mlc
       POSTGRES_PASSWORD: mlc
       POSTGRES_DB: mlc
+    ports:
+      -"5444:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
